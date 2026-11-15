@@ -1,5 +1,5 @@
-import { AppShell } from "@/app/(app)/app-shell";
-import { PlayerProvider } from "@/app/(app)/player-provider";
+import { AppShell } from "@/app/(app)/_components/app-shell";
+import { PlayerProvider } from "@/app/(app)/_components/player-provider";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (

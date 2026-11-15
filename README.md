@@ -69,8 +69,11 @@ nge-plays/
 │   ├── actions/            # Server actions (YouTube search, lyrics, albums)
 │   ├── app/                # Next.js App Router pages & API routes
 │   │   ├── api/room/       # Synchronized room SSE endpoint
+│   │   ├── (app)/          # Player shell; all menus are SPA at `/`
+│   │   │   ├── room/       # Listen Together deep link (`/room?room=CODE`)
+│   │   │   ├── page.tsx    # Main web player interface (all menus)
+│   │   │   └── layout.tsx  # Player provider + app shell
 │   │   ├── layout.tsx      # Root layout and theme configuration
-│   │   └── page.tsx        # Main web player interface
 │   ├── components/         # UI and feature components
 │   │   ├── layout/         # Header, sidebar, and navigation
 │   │   ├── library/        # Playlists, track lists, and dashboard

@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isIP } from "node:net";
 import { randomBytes, timingSafeEqual } from "node:crypto";
-import type { Track } from "@/actions/ytm-core";
 import {
   applyRoomCommand,
   createRoomState,

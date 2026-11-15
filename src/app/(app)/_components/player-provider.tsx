@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext, useMemo, type ReactNode } from "react";
-import { useNgePlay } from "@/hooks/use-nge-plays";
+import { useNgePlay } from "@/hooks/use-nge-play";
 
 type NgePlayStore = ReturnType<typeof useNgePlay>;
 

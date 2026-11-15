@@ -170,7 +170,7 @@ export function shouldAcceptPlayerEvent(
   return true;
 }
 
-export type ReadyAction =
+type ReadyAction =
   | { type: "none" }
   | { type: "load"; videoId: string; seekTo: number }
   | { type: "cue"; videoId: string; seekTo: number }

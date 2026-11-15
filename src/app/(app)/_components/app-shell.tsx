@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect, useRef } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import { AppHeader } from "@/components/layout/app-header";
 import { AppSidebar } from "@/components/layout/app-sidebar";
 import { NewPlaylistModal } from "@/components/library/new-playlist-modal";
@@ -7,16 +9,40 @@ import { TrackContextMenu } from "@/components/library/track-context-menu";
 import { NowPlayingModal } from "@/components/player/now-playing-modal";
 import { PlayerFooter } from "@/components/player/player-footer";
 import { RoomModal } from "@/components/room/room-modal";
-import { usePlayer } from "@/app/(app)/player-provider";
+import { usePlayer } from "./player-provider";
 import { ROUTES } from "@/lib/routes";
 
 /**
  * Shell aplikasi: header, sidebar, footer, overlay, dan host iframe YouTube.
  * Karena berada di layout (bukan di halaman), pindah menu tidak me-remount player.
+ *
+ * Semua menu hidup di `/` (SPA). `/room` adalah satu-satunya route tambahan:
+ * deep link Listen Together yang otomatis membuka modal room.
  */
 export function AppShell({ children }: { children: React.ReactNode }) {
   const s = usePlayer();
+  const pathname = usePathname();
+  const router = useRouter();
+  const isRoomRoute = pathname === ROUTES.room;
+  const roomRouteOpenedRef = useRef(false);
   const isCurrentLiked = s.liked.some((t) => t.id === s.currentTrack?.id);
+
+  // `/room` = deep link: buka modal room sekali, lalu kalau modal ditutup
+  // kembalikan URL ke `/` (tetap bawa ?room=CODE supaya refresh tidak keluar room).
+  useEffect(() => {
+    if (!isRoomRoute) {
+      roomRouteOpenedRef.current = false;
+      return;
+    }
+    if (!roomRouteOpenedRef.current) {
+      roomRouteOpenedRef.current = true;
+      s.setRoomModalOpen(true);
+      return;
+    }
+    if (!s.roomModalOpen) {
+      router.replace(`${ROUTES.home}${window.location.search}`);
+    }
+  }, [isRoomRoute, s.roomModalOpen, s.setRoomModalOpen, router]);
 
   return (
     <div className="min-h-screen w-full bg-white dark:bg-[#0D0F14] text-[#18181B] dark:text-[#F4F5F7] flex flex-col select-none">
@@ -27,12 +53,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         onSearch={s.handleSearch}
         onClearSearch={() => {
           s.setQuery("");
-          s.navigate({ tab: "home", path: ROUTES.home });
+          s.setTab("home");
         }}
         onLogoClick={() => {
-          s.navigate({ tab: "home", path: ROUTES.home });
-          s.setActiveAlbum(null);
-          s.setChannelInfo(null);
+          s.setTab("home");
         }}
         onOpenRoom={() => s.setRoomModalOpen(true)}
       />

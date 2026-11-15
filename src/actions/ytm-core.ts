@@ -44,7 +44,7 @@ export function normalizeDuration(raw?: string): string {
   return /^\d+(\.\d{2})+$/.test(raw) ? raw.replace(/\./g, ":") : raw;
 }
 
-export type YtmPost = (
+type YtmPost = (
   endpoint: string,
   body: Record<string, any>,
   clientHint?: string
@@ -56,7 +56,7 @@ const DURATION_CACHE_MAX = 1500;
 const MAX_HYDRATE_TRACKS = 200;
 const durationCache = new Map<string, string>();
 
-export async function hydrateTrackDurations<T extends Track>(
+export async function hydrateDurations<T extends Track>(
   tracks: T[],
   ytmPost: YtmPost
 ): Promise<T[]> {

@@ -2,7 +2,7 @@ const DB_NAME = "ngeplay_db";
 const DB_VERSION = 1;
 const STORE_NAME = "kv";
 
-export type StoreKey = "liked" | "history" | "playlists" | "session";
+type StoreKey = "liked" | "history" | "playlists" | "session";
 
 let dbPromise: Promise<IDBDatabase | null> | null = null;
 

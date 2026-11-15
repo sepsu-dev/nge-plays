@@ -1,20 +1,56 @@
 "use client";
 
-import { useMemo } from "react";
-import { usePlayer } from "@/app/(app)/player-provider";
+import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import { usePlayer } from "./player-provider";
 import type { Track } from "@/actions/ytm-core";
 import { AlbumsGrid, ArtistsGrid } from "@/components/library/browse-grids";
 import { HomeDashboard } from "@/components/library/home-dashboard";
 import { LibraryView } from "@/components/library/library-view";
 import { TrackListView } from "@/components/library/track-list-view";
-import { normalizePlaylistId, ROUTES } from "@/lib/routes";
+import { normalizePlaylistId } from "@/lib/routes";
 
 /**
- * Konten utama per menu. Dirender oleh tiap route (page.tsx) menggunakan
- * store player dari layout, sehingga navigasi tidak menyentuh player.
+ * Konten utama per menu. Semua menu dirender di halaman `/` yang sama (SPA),
+ * jadi pindah menu hanya mengganti state — tidak ada navigasi router, fetch RSC,
+ * atau remount player.
  */
+// useLayoutEffect tidak jalan di server; pakai useEffect saat SSR agar tidak warning.
+const useIsomorphicLayoutEffect = typeof window !== "undefined" ? useLayoutEffect : useEffect;
+
 export function MainContent() {
   const s = usePlayer();
+  const contentRef = useRef<HTMLDivElement>(null);
+  const prevTabRef = useRef<string | null>(null);
+
+  // Animasi transisi menu memakai Web Animations API: pasti diputar ulang tiap
+  // tab berganti (tidak bergantung pada reflow class) dan tanpa me-remount subtree.
+  useIsomorphicLayoutEffect(() => {
+    if (prevTabRef.current === s.tab) return;
+    prevTabRef.current = s.tab;
+
+    const el = contentRef.current;
+    if (!el) return;
+
+    window.scrollTo({ top: 0, behavior: "auto" });
+
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    if (typeof el.animate !== "function") return;
+
+    // Batalkan animasi sebelumnya kalau user pindah menu cepat.
+    el.getAnimations().forEach((anim) => anim.cancel());
+
+    el.animate(
+      [
+        { opacity: 0, transform: "translate3d(0, 14px, 0) scale(0.99)" },
+        { opacity: 1, transform: "translate3d(0, 0, 0) scale(1)" },
+      ],
+      {
+        duration: 300,
+        easing: "cubic-bezier(0.22, 1, 0.36, 1)",
+        fill: "both",
+      }
+    );
+  }, [s.tab]);
 
   const activeCustomPlaylist = useMemo(
     () => s.customPlaylists.find((p) => p.id === s.activeCustomPlId),
@@ -67,7 +103,7 @@ export function MainContent() {
   const listLoading =
     s.tab === "playlist"
       ? // Jangan tampilkan halaman kosong: selama boot atau saat id playlist tidak
-        // ditemukan (RouteSync akan redirect ke /library), tetap tampilkan skeleton.
+        // ditemukan, tetap tampilkan skeleton.
         s.hydrating || !activeCustomPlaylist
       : s.tab === "liked" || s.tab === "history"
       ? s.hydrating
@@ -75,12 +111,8 @@ export function MainContent() {
       ? s.hydrating || (s.searching && s.queue.length === 0)
       : s.searching;
 
-  const viewKey = `${s.tab}-${s.activeAlbum?.album.id || ""}-${s.channelInfo?.id || ""}-${
-    s.tab === "playlist" ? s.activeCustomPlId : ""
-  }`;
-
   return (
-    <div key={viewKey} className="np-view-enter flex-1 flex flex-col">
+    <div ref={contentRef} className="flex-1 flex flex-col">
       {s.tab === "home" ? (
         <HomeDashboard
           loading={s.searching}
@@ -95,15 +127,9 @@ export function MainContent() {
           onOpenAlbum={s.openAlbum}
           onOpenArtist={s.openChannel}
           onOpenMenu={s.openTrackMenu}
-          onSeeAllSongs={() => s.navigate({ tab: "songs", path: ROUTES.songs })}
-          onSeeAllAlbums={() => {
-            s.setActiveAlbum(null);
-            s.navigate({ tab: "albums", path: ROUTES.albums });
-          }}
-          onSeeAllArtists={() => {
-            s.setChannelInfo(null);
-            s.navigate({ tab: "artists", path: ROUTES.artists });
-          }}
+          onSeeAllSongs={() => s.setTab("songs")}
+          onSeeAllAlbums={() => s.setTab("albums")}
+          onSeeAllArtists={() => s.setTab("artists")}
         />
       ) : s.tab === "albums" && !s.activeAlbum && s.openingTarget !== "album" ? (
         <AlbumsGrid loading={s.searching} albums={s.albums} onOpenAlbum={s.openAlbum} />
@@ -115,12 +141,12 @@ export function MainContent() {
           likedCount={s.liked.length}
           historyCount={s.history.length}
           customPlaylists={s.customPlaylists}
-          onOpenLiked={() => s.navigate({ tab: "liked", path: ROUTES.liked })}
-          onOpenHistory={() => s.navigate({ tab: "history", path: ROUTES.history })}
+          onOpenLiked={() => s.setTab("liked")}
+          onOpenHistory={() => s.setTab("history")}
           onOpenPlaylist={(id) => {
             const playlistId = normalizePlaylistId(id);
             s.setActiveCustomPlId(playlistId);
-            s.navigate({ tab: "playlist", path: ROUTES.playlist(playlistId), entityId: playlistId });
+            s.navigate({ tab: "playlist", entityId: playlistId });
           }}
           onOpenNewPlaylist={() => s.openCreatePlaylist()}
         />
@@ -146,26 +172,18 @@ export function MainContent() {
           onBack={() => {
             s.setOpeningTarget(null);
             if (s.tab === "liked" || s.tab === "history" || s.tab === "playlist") {
-              s.navigate({ tab: "library", path: ROUTES.library });
+              s.setTab("library");
               return;
             }
-            s.setActiveAlbum(null);
-            s.setChannelInfo(null);
-            s.navigate({ tab: "albums", path: ROUTES.albums });
+            s.setTab("albums");
           }}
           onPlayAll={s.playAll}
           onPlayTrack={s.playTrackNow}
           onTogglePlay={s.togglePlay}
           onOpenAlbum={s.openAlbum}
           onOpenArtist={s.openChannel}
-          onSeeAllAlbums={() => {
-            s.setActiveAlbum(null);
-            s.navigate({ tab: "albums", path: ROUTES.albums });
-          }}
-          onSeeAllArtists={() => {
-            s.setChannelInfo(null);
-            s.navigate({ tab: "artists", path: ROUTES.artists });
-          }}
+          onSeeAllAlbums={() => s.setTab("albums")}
+          onSeeAllArtists={() => s.setTab("artists")}
           onToggleLike={s.toggleLike}
           onOpenMenu={(track, e, customPlaylistId) => s.openTrackMenu(track, e, customPlaylistId)}
           onSelectPlaylist={s.handleSelectPlaylist}

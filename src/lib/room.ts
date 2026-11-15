@@ -15,7 +15,7 @@ export const MEMBER_ICON_IDS = [
 
 export type MemberIconId = (typeof MEMBER_ICON_IDS)[number];
 
-export interface MemberAvatarMeta {
+interface MemberAvatarMeta {
   id: MemberIconId;
   label: string;
   emoji: string;

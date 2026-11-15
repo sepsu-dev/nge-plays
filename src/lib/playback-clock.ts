@@ -2,7 +2,7 @@
 
 import { useSyncExternalStore } from "react";
 
-export interface ClockSnapshot {
+interface ClockSnapshot {
   currentTime: number;
   duration: number;
 }

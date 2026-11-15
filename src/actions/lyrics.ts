@@ -2,12 +2,12 @@
 
 import { getClientIp, takeRateLimit } from "@/lib/server-guard";
 
-export interface LyricLine {
+interface LyricLine {
   time: number;
   text: string;
 }
 
-export interface LyricVariant {
+interface LyricVariant {
   synced: LyricLine[];
   plain: string;
   trackName?: string;

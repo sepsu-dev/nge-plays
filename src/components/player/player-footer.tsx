@@ -28,7 +28,6 @@ import type { TabId } from "@/lib/player-state";
 
 interface PlayerFooterProps {
   tab: TabId;
-  loading?: boolean;
   nowPlayingOpen: boolean;
   currentTrack: Track | undefined;
   isPlaying: boolean;
@@ -64,7 +63,6 @@ const MOBILE_NAV: { id: TabId; label: string; icon: typeof Home }[] = [
 
 export function PlayerFooter({
   tab,
-  loading = false,
   nowPlayingOpen,
   currentTrack,
   isPlaying,
@@ -173,14 +171,6 @@ export function PlayerFooter({
                   {formatTime(currentTime)} - {formatTime(duration)}
                 </span>
               </>
-            ) : loading ? (
-              <div className="flex items-center gap-3 flex-1 min-w-0 animate-pulse">
-                <div className="w-11 h-11 rounded-xl bg-[#F3F4F6] dark:bg-[#1E222D] shrink-0" />
-                <div className="min-w-0 flex-1 space-y-1.5">
-                  <div className="h-3.5 w-32 max-w-full rounded bg-[#F3F4F6] dark:bg-[#1E222D]" />
-                  <div className="h-3 w-20 rounded bg-[#F3F4F6] dark:bg-[#1E222D]" />
-                </div>
-              </div>
             ) : (
               <div className="flex items-center gap-3 text-xs text-[#9CA3AF]">
                 <div className="w-11 h-11 rounded-xl bg-[#F4F5F7] dark:bg-[#161922] flex items-center justify-center">

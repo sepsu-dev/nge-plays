@@ -5,7 +5,7 @@ import { sanitizeIp, takeRateLimit } from "@/lib/server-guard";
 import {
   FALLBACK_THUMB,
   THUMB_SIZE,
-  hydrateTrackDurations as hydrateDurations,
+  hydrateDurations,
   normalizeDuration,
   sizeThumbUrl,
   walkObject,
@@ -38,7 +38,7 @@ export interface ArtistSummary {
   avatar: string;
 }
 
-export interface SearchResults {
+interface SearchResults {
   tracks: Track[];
   albums: AlbumSummary[];
   artists: ArtistSummary[];
@@ -53,7 +53,7 @@ export interface ChannelInfo {
   videoCount?: string;
 }
 
-export interface ChannelVideosResult {
+interface ChannelVideosResult {
   channel: ChannelInfo;
   tracks: Track[];
   continuation?: string;
@@ -801,11 +801,6 @@ export async function fetchRelatedTracks(videoId: string): Promise<Track[]> {
     });
   });
   return hydrateYt(fallback);
-}
-
-export async function searchYouTube(query: string, clientHint?: string): Promise<Track[]> {
-  const res = await searchYouTubeMusic(query, clientHint);
-  return res.tracks;
 }
 
 export async function searchYouTubeMusic(

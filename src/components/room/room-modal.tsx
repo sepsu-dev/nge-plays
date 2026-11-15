@@ -12,6 +12,7 @@ import {
 import toast from "react-hot-toast";
 import { Tip } from "@/components/ui/tooltip";
 import { sanitizeRoomCode, MEMBER_AVATARS, type MemberIconId, type RoomState } from "@/lib/room";
+import { roomLink } from "@/lib/routes";
 
 function MemberAvatar({
   icon,
@@ -244,7 +245,7 @@ export function RoomModal({
                   type="button"
                   onClick={() =>
                     copyText(
-                      `${window.location.origin}/?room=${room.code}`,
+                      roomLink(room.code, window.location.origin),
                       "link",
                       "Link copied"
                     )

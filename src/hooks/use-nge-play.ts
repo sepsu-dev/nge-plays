@@ -20,7 +20,6 @@ import { useMediaSession } from "@/hooks/use-media-session";
 import type { Track } from "@/actions/ytm-core";
 import { isSameQueue, useRoomSync, type RoomPlayerBridge } from "@/hooks/use-room-sync";
 import { useYoutubePlayer } from "@/hooks/use-youtube-player";
-import { useNavigate, useReplace, useRoute } from "@/hooks/use-route";
 import { createTtlCache, getClientHint } from "@/lib/client-cache";
 import { parseDurationSec } from "@/lib/format";
 import { createClockStore, type ClockStore } from "@/lib/playback-clock";
@@ -38,7 +37,7 @@ import {
   type TrackMenuState,
 } from "@/lib/player-state";
 import { sanitizeRoomCode } from "@/lib/room";
-import { normalizePlaylistId, ROUTES, tabToRoute, type Route } from "@/lib/routes";
+import { normalizePlaylistId } from "@/lib/routes";
 import {
   flushSessionSync,
   readStored,
@@ -85,50 +84,10 @@ function cachedFetchYouTubeAlbum(albumId: string) {
 }
 
 export function useNgePlay() {
-  // Rute aktif (berbasis URL). `tab` adalah alias kompatibilitas yang diturunkan dari sini,
-  // sehingga sidebar/footer/list cukup membaca satu sumber kebenaran.
-  const route = useRoute();
-  const goTo = useNavigate();
-  const goReplace = useReplace();
-  const [tab, setTabState] = useState<TabId>(route.tab);
-  const routeRef = useRef(route);
-  routeRef.current = route;
-
-  // navigate: satu-satunya cara berpindah menu — memakai router Next sehingga
-  // URL berubah DAN halaman tujuan dirender, tanpa me-remount player (ada di layout).
-  // `route.path` dihitung ulang dari tab+entityId agar URL detail (mis. /library/playlist/<id>)
-  // konsisten walau pemanggil hanya mengisi salah satunya.
-  const navigate = useCallback(
-    (next: Route) => {
-      setTabState(next.tab);
-      goTo(tabToRoute(next.tab, next.entityId, next.query));
-    },
-    [goTo]
-  );
-
-  // Redirect koreksi (link rusak / data gagal dimuat) tanpa menambah history.
-  const replaceRoute = useCallback(
-    (next: Route) => {
-      setTabState(next.tab);
-      goReplace(tabToRoute(next.tab, next.entityId, next.query));
-    },
-    [goReplace]
-  );
-
-  // setTab tetap ada supaya handler lama tidak perlu diubah; sekarang menerjemahkan
-  // ke rute agar URL selalu konsisten dengan layar.
-  const setTab = useCallback(
-    (next: TabId) => {
-      navigate(tabToRoute(next));
-    },
-    [navigate]
-  );
-
-  // Dipakai route saat dibuka langsung: samakan layar dengan URL tanpa push (URL sudah benar).
-  const syncRoute = useCallback((nextTab: TabId, entityId?: string) => {
-    setTabState(nextTab);
-    if (nextTab === "playlist" && entityId) setActiveCustomPlId(normalizePlaylistId(entityId));
-  }, []);
+  // Semua menu hidup di satu halaman (SPA). `tab` adalah satu-satunya sumber
+  // kebenaran menu aktif; tidak ada router yang dipanggil saat pindah menu,
+  // sehingga transisi instan dan player tidak pernah ter-remount.
+  const [tab, setTabState] = useState<TabId>("home");
 
   const [mobileVolOpen, setMobileVolOpen] = useState(false);
   const [openingTarget, setOpeningTarget] = useState<"album" | "artist" | null>(null);
@@ -148,8 +107,6 @@ export function useNgePlay() {
 
   // Custom Playlists & Menu
   const [customPlaylists, setCustomPlaylists] = useState<CustomPlaylist[]>([]);
-  /** id lama (non-UUID) -> UUID hasil migrasi, untuk membuka link/bookmark lama. */
-  const [playlistAliases, setPlaylistAliases] = useState<Record<string, string>>({});
   const [activeCustomPlId, setActiveCustomPlId] = useState("");
   const [newPlaylistOpen, setNewPlaylistOpen] = useState(false);
   const [newPlaylistName, setNewPlaylistName] = useState("");
@@ -188,6 +145,32 @@ export function useNgePlay() {
   const [muted, setMuted] = useState(false);
   const [repeat, setRepeat] = useState(false);
   const [shuffle, setShuffle] = useState(false);
+  // Navigasi menu = perubahan state murni (tanpa router.push), jadi tidak ada
+  // fetch RSC / loading antar menu. `entityId` dipakai untuk membuka detail.
+  const navigate = useCallback(
+    (next: { tab: TabId; entityId?: string; query?: string }) => {
+      setTabState(next.tab);
+      if (next.tab === "playlist" && next.entityId) {
+        setActiveCustomPlId(normalizePlaylistId(next.entityId));
+      }
+      if (next.query !== undefined) setQuery(next.query);
+    },
+    []
+  );
+
+  // Pindah menu dari sidebar/footer: selalu mulai dari daftar, bukan detail lama.
+  const setTab = useCallback(
+    (next: TabId) => {
+      navigate({ tab: next });
+      setOpeningTarget(null);
+      setActiveAlbum(null);
+      setChannelInfo(null);
+      if (next !== "playlist") setActiveCustomPlId("");
+    },
+    [navigate]
+  );
+
+
 
   const clockRef = useRef<ClockStore | null>(null);
   if (!clockRef.current) clockRef.current = createClockStore();
@@ -563,12 +546,11 @@ export function useNgePlay() {
       const parsedHistory = Array.isArray(storedHistory) ? storedHistory : [];
       const storedPlsRaw = Array.isArray(storedPls) ? storedPls : [];
       // Playlist lama bisa punya id `pl_<timestamp>`; naikkan ke UUID sekali di sini
-      // supaya seluruh URL setelah boot konsisten memakai UUID.
+      // supaya data tersimpan konsisten memakai UUID.
       const migrated = migratePlaylistIds(storedPlsRaw);
       if (migrated.playlists !== storedPlsRaw) {
         void writeStored("playlists", uid, migrated.playlists);
       }
-      setPlaylistAliases(migrated.aliases);
       setLiked(parsedLiked);
       setHistory(parsedHistory);
       setCustomPlaylists(migrated.playlists);
@@ -599,14 +581,6 @@ export function useNgePlay() {
         if (typeof bestSession.muted === "boolean") setMuted(bestSession.muted);
         if (typeof bestSession.repeat === "boolean") setRepeat(bestSession.repeat);
         if (typeof bestSession.shuffle === "boolean") setShuffle(bestSession.shuffle);
-        if (
-          routeRef.current.path === ROUTES.home &&
-          ["home", "songs", "albums", "artists", "liked", "history", "queue", "library"].includes(
-            bestSession.tab
-          )
-        ) {
-          setTab(bestSession.tab);
-        }
         if (restoredTrack?.id) {
           pendingResumeRef.current = {
             videoId: restoredTrack.id,
@@ -617,6 +591,18 @@ export function useNgePlay() {
       } else if (joinedRoom && bestSession) {
         if (typeof bestSession.volume === "number") setVolume(bestSession.volume);
         if (typeof bestSession.muted === "boolean") setMuted(bestSession.muted);
+      }
+
+      // Menu terakhir dipulihkan dari sesi. URL tidak lagi menyimpan tab karena
+      // semua menu hidup di `/` (SPA), jadi sesi adalah satu-satunya sumbernya.
+      if (
+        !joinedRoom &&
+        bestSession &&
+        ["home", "songs", "albums", "artists", "liked", "history", "queue", "library"].includes(
+          bestSession.tab
+        )
+      ) {
+        setTabState(bestSession.tab);
       }
 
       hydratedRef.current = true;
@@ -773,17 +759,6 @@ export function useNgePlay() {
     }
   }, [lyrics?.variants?.length, lyricVariantIdx, sendRoomCommand]);
 
-  const changeLyricOffset = useCallback(
-    (nextOffset: number) => {
-      const clean = Math.max(-30, Math.min(30, Math.round(nextOffset * 10) / 10));
-      setLyricOffset(clean);
-      if (roomRef.current) {
-        void sendRoomCommand({ type: "setLyrics", offset: clean });
-      }
-    },
-    [sendRoomCommand]
-  );
-
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -828,28 +803,6 @@ export function useNgePlay() {
     });
   }
 
-  const openAlbumById = useCallback(
-    async (albumId: string) => {
-      if (!albumId) return;
-      setSearching(true);
-      setOpeningTarget("album");
-      try {
-        const data = await cachedFetchYouTubeAlbum(albumId);
-        if (data) {
-          setActiveAlbum(data);
-        } else {
-          toast.error("Failed to load album");
-          // Link album rusak/tidak tersedia -> kembali ke daftar album.
-          replaceRoute(tabToRoute("albums"));
-        }
-      } finally {
-        setSearching(false);
-        setOpeningTarget((cur) => (cur === "album" ? null : cur));
-      }
-    },
-    [replaceRoute]
-  );
-
   const openChannel = useCallback(
     async (target: Track | ArtistSummary | string, e?: React.MouseEvent) => {
       e?.stopPropagation();
@@ -876,48 +829,29 @@ export function useNgePlay() {
         }
         if (!cid) {
           toast.error("Artist channel not found");
-          replaceRoute(tabToRoute("artists"));
+          setTab("artists");
           return;
         }
         const data = await cachedFetchYouTubeChannel(cid, undefined, knownName);
         if (!data) {
           toast.error("Failed to load artist tracks");
-          // Link artis rusak/tidak tersedia -> kembali ke daftar artis.
-          replaceRoute(tabToRoute("artists"));
+          // Data artis gagal dimuat -> kembali ke daftar artis.
+          setTab("artists");
           return;
         }
         setChannelInfo(data.channel);
         setChannelTracks(data.tracks);
         setChannelCont(data.continuation);
         if (data.channel.id) {
-          navigate({
-            tab: "artists",
-            path: ROUTES.artist(data.channel.id),
-            entityId: data.channel.id,
-          });
+          navigate({ tab: "artists", entityId: data.channel.id });
         }
       } finally {
         setSearching(false);
         setOpeningTarget((cur) => (cur === "artist" ? null : cur));
       }
     },
-    [navigate, replaceRoute]
+    [navigate, setTab]
   );
-
-  // Deep link: /albums/[id] & /artists/[id] memuat datanya sendiri saat dibuka
-  // langsung / di-refresh. Guard `openingTarget`/data aktif mencegah fetch ganda
-  // saat navigasi dilakukan dari dalam app.
-  useEffect(() => {
-    const id = route.tab === "albums" ? route.entityId : undefined;
-    if (!id || activeAlbum?.album.id === id || openingTarget === "album") return;
-    void openAlbumById(id);
-  }, [route.tab, route.entityId, activeAlbum?.album.id, openingTarget, openAlbumById]);
-
-  useEffect(() => {
-    const id = route.tab === "artists" ? route.entityId : undefined;
-    if (!id || channelInfo?.id === id || openingTarget === "artist") return;
-    void openChannel(id);
-  }, [route.tab, route.entityId, channelInfo?.id, openingTarget, openChannel]);
 
   async function openAlbum(album: AlbumSummary) {
     if (!album.id) return;
@@ -925,12 +859,12 @@ export function useNgePlay() {
     setOpeningTarget("album");
     setActiveAlbum(null);
     setChannelInfo(null);
-    navigate({ tab: "albums", path: ROUTES.album(album.id), entityId: album.id });
+    navigate({ tab: "albums", entityId: album.id });
     try {
       const data = await cachedFetchYouTubeAlbum(album.id);
       if (!data) {
         toast.error("Failed to load album");
-        replaceRoute(tabToRoute("albums"));
+        setTab("albums");
         return;
       }
       setActiveAlbum(data);
@@ -968,7 +902,7 @@ export function useNgePlay() {
     setOpeningTarget(null);
     setActiveAlbum(null);
     setChannelInfo(null);
-    navigate({ tab: "songs", path: ROUTES.songs });
+    navigate({ tab: "songs" });
     setActivePlaylistId(pl.id);
     setHeroTitle(pl.title);
     const clientHint = getClientHint();
@@ -994,7 +928,7 @@ export function useNgePlay() {
     setOpeningTarget(null);
     setActiveAlbum(null);
     setChannelInfo(null);
-    navigate({ tab: "songs", path: `${ROUTES.search}?q=${encodeURIComponent(q)}`, query: q });
+    navigate({ tab: "songs", query: q });
     setActivePlaylistId("");
     setHeroTitle(`Results: ${q}`);
     const clientHint = getClientHint();
@@ -1032,7 +966,7 @@ export function useNgePlay() {
     setNewPlaylistName("");
     setNewPlaylistOpen(false);
     setActiveCustomPlId(created.id);
-    navigate({ tab: "playlist", path: ROUTES.playlist(created.id), entityId: created.id });
+    navigate({ tab: "playlist", entityId: created.id });
     toast.success(`Created "${trimmed}"`);
   }
 
@@ -1100,7 +1034,7 @@ export function useNgePlay() {
       // Hapus = keluar dari detail playlist. Selalu kembali ke Library (bukan home),
       // supaya user langsung melihat daftar playlist yang tersisa.
       setActiveCustomPlId("");
-      navigate(tabToRoute("library"));
+      setTab("library");
     }
     toast.success("Playlist deleted");
   }
@@ -1148,10 +1082,7 @@ export function useNgePlay() {
   return {
     tab,
     setTab,
-    route,
     navigate,
-    syncRoute,
-    openAlbumById,
     mobileVolOpen,
     setMobileVolOpen,
     query,
@@ -1164,13 +1095,11 @@ export function useNgePlay() {
     albums,
     artists,
     activeAlbum,
-    setActiveAlbum,
     searching,
     hydrating,
     openingTarget,
     setOpeningTarget,
     customPlaylists,
-    playlistAliases,
     activeCustomPlId,
     setActiveCustomPlId,
     newPlaylistOpen,
@@ -1185,16 +1114,13 @@ export function useNgePlay() {
     trackMenu,
     setTrackMenu,
     channelInfo,
-    setChannelInfo,
     channelTracks,
     channelCont,
     loadingMore,
     lyrics,
     loadingLyrics,
     lyricVariantIdx,
-    lyricOffset,
     cycleLyricVariant,
-    changeLyricOffset,
     nowPlayingOpen,
     setNowPlayingOpen,
     nowPlayingTab,

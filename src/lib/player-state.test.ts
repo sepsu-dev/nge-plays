@@ -13,7 +13,7 @@ import {
   shouldAttemptBackgroundResume,
   shouldRestorePlayerAudio,
 } from "./player-state";
-import { isAlbumId, isArtistId, normalizePlaylistId, ROUTES, routeFromLocation, safeDecode } from "./routes";
+import { normalizePlaylistId, roomLink, ROUTES } from "./routes";
 import {
   applyRoomCommand,
   computeRoomTime,
@@ -285,42 +285,21 @@ const dup = migratePlaylistIds([
 ]);
 assert.notEqual(dup.playlists[0].id, dup.playlists[1].id);
 
-// 13. URL playlist: id di-encode, hanya UUID yang dinormalisasi ke huruf kecil.
-assert.equal(ROUTES.playlist("a/b?c#d"), "/library/playlist/a%2Fb%3Fc%23d");
+// 13. Id playlist: hanya UUID yang dinormalisasi ke huruf kecil.
 assert.equal(
   normalizePlaylistId(" 9F1C2A3E-1B2C-4D5E-8F90-123456789ABC "),
   "9f1c2a3e-1b2c-4d5e-8f90-123456789abc"
 );
 assert.equal(normalizePlaylistId("PL_1730000000"), "PL_1730000000", "id lama tidak diubah");
+
+// 14. Hanya `/` dan `/room` yang jadi route; link share room memakai /room.
+assert.equal(ROUTES.home, "/");
+assert.equal(ROUTES.room, "/room");
+assert.equal(roomLink("ABC123"), "/room?room=ABC123");
 assert.equal(
-  routeFromLocation("/library/playlist/9f1c2a3e-1b2c-4d5e-8f90-123456789abc", "").entityId,
-  "9f1c2a3e-1b2c-4d5e-8f90-123456789abc"
+  roomLink("A B", "https://ngeplays.app"),
+  "https://ngeplays.app/room?room=A%20B"
 );
-assert.equal(routeFromLocation("/library/pl_1730000000", "").tab, "playlist");
-
-// 14. Album & artist id: validasi ketat, path rusak jatuh ke halaman daftar.
-assert.equal(isAlbumId("MPREb_9FakeAlbum123"), true);
-assert.equal(isAlbumId("ab"), false);
-assert.equal(isAlbumId("../../etc/passwd"), false);
-assert.equal(isAlbumId("MPREb_9Fake/Album"), false);
-assert.equal(isArtistId("UCabcdefghijklmnopqrstuv"), true);
-assert.equal(isArtistId("UCshort"), false);
-assert.equal(isArtistId("MPREb_9FakeAlbum123"), false);
-
-const badAlbum = routeFromLocation("/albums/ab", "");
-assert.equal(badAlbum.tab, "albums");
-assert.equal(badAlbum.entityId, undefined, "album id invalid tidak dipakai");
-assert.equal(badAlbum.path, ROUTES.albums);
-const badArtist = routeFromLocation("/artists/not-a-channel", "");
-assert.equal(badArtist.tab, "artists");
-assert.equal(badArtist.entityId, undefined, "artist id invalid tidak dipakai");
-assert.equal(badArtist.path, ROUTES.artists);
-
-// 15. URL malformed tidak boleh throw; playlist junk kembali ke Library.
-assert.equal(safeDecode("%"), "%");
-assert.equal(safeDecode("MPREb_9FakeAlbum123"), "MPREb_9FakeAlbum123");
-assert.equal(routeFromLocation("/library/playlist/%", "").tab, "library");
-assert.equal(routeFromLocation("/library/playlist/%2Fetc", "").tab, "library");
 
 // 16. Payload room di-whitelist: field asing dibuang, URL non-https ditolak,
 // karakter kontrol dibersihkan, dan panjang queue dibatasi.
