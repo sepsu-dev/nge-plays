@@ -13,7 +13,8 @@ import {
   shouldAttemptBackgroundResume,
   shouldRestorePlayerAudio,
 } from "./player-state";
-import { normalizePlaylistId, roomLink, ROUTES } from "./routes";
+import { normalizePlaylistId, readSearchParam, roomLink, ROUTES, searchPath } from "./routes";
+import { mergeViewHistory, readViewHistory } from "./view-history";
 import {
   applyRoomCommand,
   computeRoomTime,
@@ -300,6 +301,38 @@ assert.equal(
   roomLink("A B", "https://ngeplays.app"),
   "https://ngeplays.app/room?room=A%20B"
 );
+
+// 15. Query pencarian disimpan di `?search=` supaya refresh tidak mereset hasil.
+assert.equal(readSearchParam("?search=hello%20world"), "hello world");
+assert.equal(readSearchParam("?search=%20%20x%20%20"), "x");
+assert.equal(readSearchParam("?room=ABC"), "");
+assert.equal(readSearchParam(`?search=${"x".repeat(200)}`).length, 150);
+assert.equal(searchPath("/", "", "a b"), "/?search=a+b");
+assert.equal(searchPath("/", "?search=old&room=ABC", null), "/?room=ABC");
+assert.equal(searchPath("/room", "?room=ABC", "x"), "/room?room=ABC&search=x");
+
+// 16. History state aplikasi di-merge dengan state Next tanpa menghapus key Next.
+const mergedView = mergeViewHistory(
+  { __NA: true, tree: "next-tree" },
+  { tab: "search", search: "abc" }
+);
+assert.deepEqual(mergedView, {
+  __NA: true,
+  tree: "next-tree",
+  ngeplay: { tab: "search", search: "abc" },
+});
+assert.deepEqual(readViewHistory(mergedView), {
+  tab: "search",
+  search: "abc",
+  entityId: undefined,
+});
+assert.deepEqual(readViewHistory({ ngeplay: { tab: "albums", entityId: "MPREb_x" } }), {
+  tab: "albums",
+  search: undefined,
+  entityId: "MPREb_x",
+});
+assert.equal(readViewHistory({ foo: 1 }), null);
+assert.equal(readViewHistory(null), null);
 
 // 16. Payload room di-whitelist: field asing dibuang, URL non-https ditolak,
 // karakter kontrol dibersihkan, dan panjang queue dibatasi.

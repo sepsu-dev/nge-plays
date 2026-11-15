@@ -105,7 +105,7 @@ export function TrackListView({
   onClearHistory,
   onLoadMoreChannel,
 }: TrackListViewProps) {
-  const isSearchMode = tab === "songs" && !activePlaylistId;
+  const isSearchMode = (tab === "songs" && !activePlaylistId) || tab === "search";
   const totalSec = displayedTracks.reduce((acc, t) => acc + parseDurationSec(t.duration), 0);
   const heroCover =
     (tab === "artists" && channelInfo?.avatar) ||
@@ -117,7 +117,7 @@ export function TrackListView({
       ? channelInfo.title
       : tab === "albums" && activeAlbum
       ? activeAlbum.album.title
-      : tab === "songs"
+      : tab === "songs" || tab === "search"
       ? heroTitle
       : tab === "queue"
       ? "Play Queue"
@@ -134,7 +134,8 @@ export function TrackListView({
     ((tab === "albums" && !activeAlbum) ||
       (tab === "artists" && !channelInfo) ||
       (tab === "playlist" && !activeCustomPlaylist) ||
-      (tab === "songs" && !displayedTracks.length));
+      (tab === "songs" && !displayedTracks.length) ||
+      (tab === "search" && !displayedTracks.length));
 
   return (
     <>
@@ -378,7 +379,7 @@ export function TrackListView({
           [0, 1, 2, 3, 4, 5, 6, 7].map((i) => <TrackRowSkeleton key={i} />)
         ) : displayedTracks.length === 0 ? (
           <div className="text-center py-16 text-[#9CA3AF] dark:text-[#6B7280] text-xs">
-            No tracks in this list yet.
+            {tab === "search" ? "No results found." : "No tracks in this list yet."}
           </div>
         ) : (
           displayedTracks.map((track) => {

@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useMemo, type ReactNode } from "react";
+import { createContext, useContext, type ReactNode } from "react";
 import { useNgePlay } from "@/hooks/use-nge-play";
 
 type NgePlayStore = ReturnType<typeof useNgePlay>;
@@ -14,8 +14,7 @@ const PlayerContext = createContext<NgePlayStore | null>(null);
  */
 export function PlayerProvider({ children }: { children: ReactNode }) {
   const store = useNgePlay();
-  const value = useMemo(() => store, [store]);
-  return <PlayerContext.Provider value={value}>{children}</PlayerContext.Provider>;
+  return <PlayerContext.Provider value={store}>{children}</PlayerContext.Provider>;
 }
 
 export function usePlayer(): NgePlayStore {

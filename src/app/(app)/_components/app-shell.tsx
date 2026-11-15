@@ -31,7 +31,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // kembalikan URL ke `/` (tetap bawa ?room=CODE supaya refresh tidak keluar room).
   useEffect(() => {
     if (!isRoomRoute) {
-      roomRouteOpenedRef.current = false;
+      if (roomRouteOpenedRef.current) {
+        roomRouteOpenedRef.current = false;
+        s.setRoomModalOpen(false);
+      }
       return;
     }
     if (!roomRouteOpenedRef.current) {
@@ -51,10 +54,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         room={s.room}
         onQueryChange={s.setQuery}
         onSearch={s.handleSearch}
-        onClearSearch={() => {
-          s.setQuery("");
-          s.setTab("home");
-        }}
+        onClearSearch={() => s.clearSearch()}
         onLogoClick={() => {
           s.setTab("home");
         }}

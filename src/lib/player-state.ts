@@ -87,7 +87,8 @@ export type TabId =
   | "history"
   | "queue"
   | "playlist"
-  | "library";
+  | "library"
+  | "search";
 
 export interface SessionSnapshot {
   queue: Track[];

@@ -65,6 +65,8 @@ export function MainContent() {
         return s.activeAlbum ? s.activeAlbum.tracks : s.results;
       case "songs":
         return s.results;
+      case "search":
+        return s.searchResults;
       case "queue":
         return s.queue;
       case "liked":
@@ -82,6 +84,7 @@ export function MainContent() {
     s.channelTracks,
     s.activeAlbum,
     s.results,
+    s.searchResults,
     s.queue,
     s.liked,
     s.history,
@@ -101,7 +104,9 @@ export function MainContent() {
   }, [s.history, s.results, s.trending]);
 
   const listLoading =
-    s.tab === "playlist"
+    s.tab === "search"
+      ? s.searching
+      : s.tab === "playlist"
       ? // Jangan tampilkan halaman kosong: selama boot atau saat id playlist tidak
         // ditemukan, tetap tampilkan skeleton.
         s.hydrating || !activeCustomPlaylist
@@ -155,14 +160,14 @@ export function MainContent() {
           tab={s.tab}
           searching={listLoading}
           displayedTracks={displayedTracks}
-          albums={s.albums}
-          artists={s.artists}
+          albums={s.tab === "search" ? s.searchAlbums : s.albums}
+          artists={s.tab === "search" ? s.searchArtists : s.artists}
           currentTrack={s.currentTrack}
           isPlaying={s.isPlaying}
           liked={s.liked}
-          playlists={s.playlists}
-          activePlaylistId={s.activePlaylistId}
-          heroTitle={s.heroTitle}
+          playlists={s.tab === "search" ? [] : s.playlists}
+          activePlaylistId={s.tab === "search" ? "" : s.activePlaylistId}
+          heroTitle={s.tab === "search" ? s.searchTitle : s.heroTitle}
           activeAlbum={s.activeAlbum}
           channelInfo={s.channelInfo}
           channelCont={s.channelCont}
@@ -182,8 +187,8 @@ export function MainContent() {
           onTogglePlay={s.togglePlay}
           onOpenAlbum={s.openAlbum}
           onOpenArtist={s.openChannel}
-          onSeeAllAlbums={() => s.setTab("albums")}
-          onSeeAllArtists={() => s.setTab("artists")}
+          onSeeAllAlbums={s.tab === "search" ? undefined : () => s.setTab("albums")}
+          onSeeAllArtists={s.tab === "search" ? undefined : () => s.setTab("artists")}
           onToggleLike={s.toggleLike}
           onOpenMenu={(track, e, customPlaylistId) => s.openTrackMenu(track, e, customPlaylistId)}
           onSelectPlaylist={s.handleSelectPlaylist}

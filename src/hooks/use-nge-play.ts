@@ -37,7 +37,12 @@ import {
   type TrackMenuState,
 } from "@/lib/player-state";
 import { sanitizeRoomCode } from "@/lib/room";
-import { normalizePlaylistId } from "@/lib/routes";
+import { normalizePlaylistId, readSearchParam, ROUTES, searchPath } from "@/lib/routes";
+import {
+  readViewHistory,
+  writeViewHistory,
+  type ViewHistoryState,
+} from "@/lib/view-history";
 import {
   flushSessionSync,
   readStored,
@@ -102,6 +107,10 @@ export function useNgePlay() {
   const [albums, setAlbums] = useState<AlbumSummary[]>([]);
   const [artists, setArtists] = useState<ArtistSummary[]>([]);
   const [activeAlbum, setActiveAlbum] = useState<{ album: AlbumSummary; tracks: Track[] } | null>(null);
+  const [searchResults, setSearchResults] = useState<Track[]>([]);
+  const [searchAlbums, setSearchAlbums] = useState<AlbumSummary[]>([]);
+  const [searchArtists, setSearchArtists] = useState<ArtistSummary[]>([]);
+  const [searchTitle, setSearchTitle] = useState("");
   const [searching, setSearching] = useState(true);
   const [hydrating, setHydrating] = useState(true);
 
@@ -146,14 +155,52 @@ export function useNgePlay() {
   const [repeat, setRepeat] = useState(false);
   const [shuffle, setShuffle] = useState(false);
   // Navigasi menu = perubahan state murni (tanpa router.push), jadi tidak ada
-  // fetch RSC / loading antar menu. `entityId` dipakai untuk membuka detail.
+  // fetch RSC / loading antar menu. History API dipakai supaya Back/Forward
+  // mengembalikan view sebelumnya (termasuk hasil search).
   const navigate = useCallback(
-    (next: { tab: TabId; entityId?: string; query?: string }) => {
+    (
+      next: { tab: TabId; entityId?: string; query?: string | null },
+      opts?: { replace?: boolean }
+    ) => {
+      const search =
+        next.tab === "search" && typeof next.query === "string"
+          ? next.query.trim()
+          : null;
+
       setTabState(next.tab);
+      if (next.tab !== "search" && next.tab !== "playlist") {
+        lastMenuTabRef.current = next.tab;
+      }
       if (next.tab === "playlist" && next.entityId) {
         setActiveCustomPlId(normalizePlaylistId(next.entityId));
       }
-      if (next.query !== undefined) setQuery(next.query);
+      if (typeof next.query === "string") {
+        setQuery(next.query);
+        activeSearchRef.current = next.query;
+      } else if (next.query === null) {
+        setQuery("");
+        activeSearchRef.current = "";
+      }
+
+      // Pindah ke menu/detail mana pun selain search = reset search.
+      // Entry search tetap ada di history, jadi Back masih bisa mengembalikannya.
+      if (next.tab !== "search") {
+        setQuery("");
+        activeSearchRef.current = "";
+        setSearchResults([]);
+        setSearchAlbums([]);
+        setSearchArtists([]);
+        setSearchTitle("");
+      }
+
+      if (typeof window === "undefined") return;
+      const view: ViewHistoryState = {
+        tab: next.tab,
+        search: search || undefined,
+        entityId: next.entityId,
+      };
+      const url = searchPath(ROUTES.home, window.location.search, search);
+      writeViewHistory(view, url, opts?.replace ? "replace" : "push");
     },
     []
   );
@@ -177,6 +224,9 @@ export function useNgePlay() {
   const clock = clockRef.current;
 
   const hydratedRef = useRef(false);
+  const handleSearchRef = useRef<
+    (q: string, opts?: { recordHistory?: boolean }) => void
+  >(() => {});
   const hasUserPlaybackRef = useRef(false);
   const activeTrackIdRef = useRef<string>("");
   const userKeyRef = useRef("guest");
@@ -190,6 +240,12 @@ export function useNgePlay() {
   const isPlayingRef = useRef<boolean>(isPlaying);
   const resultsRef = useRef<Track[]>(results);
   const trendingRef = useRef<Track[]>(trending);
+  const searchResultsRef = useRef<Track[]>(searchResults);
+  const customPlaylistsRef = useRef<CustomPlaylist[]>(customPlaylists);
+  const activeSearchRef = useRef("");
+  const lastMenuTabRef = useRef<TabId>("home");
+  const openAlbumByIdRef = useRef<(albumId: string) => void>(() => {});
+  const openChannelByIdRef = useRef<(channelId: string) => void>(() => {});
   const lyricPrefsRef = useRef({ variantIdx: lyricVariantIdx, offset: lyricOffset });
   const stateRef = useRef({
     queue,
@@ -208,6 +264,8 @@ export function useNgePlay() {
     isPlayingRef.current = isPlaying;
     resultsRef.current = results;
     trendingRef.current = trending;
+    searchResultsRef.current = searchResults;
+    customPlaylistsRef.current = customPlaylists;
     lyricPrefsRef.current = { variantIdx: lyricVariantIdx, offset: lyricOffset };
     stateRef.current = { queue, currentIndex, isPlaying, volume, muted, repeat, shuffle, tab };
   }, [
@@ -221,9 +279,103 @@ export function useNgePlay() {
     tab,
     results,
     trending,
+    searchResults,
+    customPlaylists,
     lyricVariantIdx,
     lyricOffset,
   ]);
+
+  // Clear search: kembali ke menu terakhir dan hapus ?search= dari entry aktif.
+  const clearSearch = useCallback(() => {
+    setQuery("");
+    activeSearchRef.current = "";
+    setSearchResults([]);
+    setSearchAlbums([]);
+    setSearchArtists([]);
+    setSearchTitle("");
+    if (stateRef.current.tab === "search") {
+      navigate({ tab: lastMenuTabRef.current, query: null }, { replace: true });
+    }
+  }, [navigate]);
+
+  // Samakan entry history aktif dengan view yang tampil (mis. hasil boot restore).
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const current = readViewHistory(window.history.state);
+    const search = tab === "search" ? activeSearchRef.current || undefined : undefined;
+    if (current?.tab === tab && (current.search || undefined) === (search || undefined)) {
+      return;
+    }
+    writeViewHistory({ tab, search }, window.location.href, "replace");
+  }, [tab]);
+
+  // Back/Forward: restore tab, search, atau detail dari history state.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const onPopState = (event: PopStateEvent) => {
+      const view = readViewHistory(event.state);
+      const q = view?.search || readSearchParam(window.location.search);
+      if (q && (!view || view.tab === "search")) {
+        setTabState("search");
+        setQuery(q);
+        activeSearchRef.current = q;
+        void handleSearchRef.current(q, { recordHistory: false });
+        return;
+      }
+      if (!view) {
+        lastMenuTabRef.current = "home";
+        setTabState("home");
+        return;
+      }
+      // Semua path di bawah ini bukan search: reset state search.
+      setQuery("");
+      activeSearchRef.current = "";
+      setSearchResults([]);
+      setSearchAlbums([]);
+      setSearchArtists([]);
+      setSearchTitle("");
+      if (view.tab === "search") {
+        // Entry search tanpa query (jarang) -> kembali ke menu terakhir.
+        setTabState(lastMenuTabRef.current);
+        return;
+      }
+      if (view.tab !== "playlist") {
+        lastMenuTabRef.current = view.tab;
+      }
+      if (view.tab === "albums" && view.entityId) {
+        setActiveAlbum(null);
+        setChannelInfo(null);
+        setTabState("albums");
+        openAlbumByIdRef.current(view.entityId);
+        return;
+      }
+      if (view.tab === "artists" && view.entityId) {
+        setActiveAlbum(null);
+        setChannelInfo(null);
+        setTabState("artists");
+        openChannelByIdRef.current(view.entityId);
+        return;
+      }
+      if (view.tab === "playlist" && view.entityId) {
+        const id = normalizePlaylistId(view.entityId);
+        if (customPlaylistsRef.current.some((p) => p.id === id)) {
+          setActiveCustomPlId(id);
+          setTabState("playlist");
+        } else {
+          setActiveCustomPlId("");
+          setTabState("library");
+        }
+        return;
+      }
+      setTabState(view.tab);
+      setOpeningTarget(null);
+      if (view.tab !== "albums") setActiveAlbum(null);
+      if (view.tab !== "artists") setChannelInfo(null);
+      if (view.tab !== "playlist") setActiveCustomPlId("");
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
 
   const currentTrack = queue[currentIndex];
   useEffect(() => {
@@ -248,7 +400,12 @@ export function useNgePlay() {
     activeTrackIdRef,
     hasUserPlaybackRef,
     isPlayingRef,
-    getFallbackQueue: () => (resultsRef.current.length ? resultsRef.current : trendingRef.current),
+    getFallbackQueue: () =>
+      stateRef.current.tab === "search" && searchResultsRef.current.length
+        ? searchResultsRef.current
+        : resultsRef.current.length
+        ? resultsRef.current
+        : trendingRef.current,
     getLyricPrefs: () => lyricPrefsRef.current,
     onQueueSync: setQueue,
     onIndexSync: setCurrentIndex,
@@ -304,7 +461,13 @@ export function useNgePlay() {
         muted: overrides?.muted ?? s.muted,
         repeat: overrides?.repeat ?? s.repeat,
         shuffle: overrides?.shuffle ?? s.shuffle,
-        tab: overrides?.tab ?? (s.tab === "playlist" ? "home" : s.tab),
+        tab:
+          overrides?.tab ??
+          (s.tab === "playlist"
+            ? "home"
+            : s.tab === "search"
+            ? lastMenuTabRef.current
+            : s.tab),
         updatedAt: Date.now(),
       };
       void writeStored("session", userKeyRef.current, snap);
@@ -602,6 +765,7 @@ export function useNgePlay() {
           bestSession.tab
         )
       ) {
+        lastMenuTabRef.current = bestSession.tab;
         setTabState(bestSession.tab);
       }
 
@@ -660,6 +824,12 @@ export function useNgePlay() {
       } finally {
         if (!cancelled) {
           setSearching(false);
+          // Refresh di `/?search=...`: jalankan ulang pencarian setelah explore
+          // selesai, supaya hasil search tidak ditimpa data explore.
+          const initialSearch = readSearchParam(window.location.search);
+          if (initialSearch) {
+            void handleSearchRef.current(initialSearch, { recordHistory: false });
+          }
         }
       }
     }
@@ -813,7 +983,6 @@ export function useNgePlay() {
       setChannelInfo(null);
       setChannelTracks([]);
       setChannelCont(undefined);
-      setTabState("artists");
       try {
         let cid: string | undefined;
         let knownName: string | undefined;
@@ -832,6 +1001,9 @@ export function useNgePlay() {
           setTab("artists");
           return;
         }
+        // Push entry detail SEBELUM fetch supaya entry sebelumnya (mis. search)
+        // tidak tertimpa oleh transisi tab sementara.
+        navigate({ tab: "artists", entityId: cid });
         const data = await cachedFetchYouTubeChannel(cid, undefined, knownName);
         if (!data) {
           toast.error("Failed to load artist tracks");
@@ -842,9 +1014,6 @@ export function useNgePlay() {
         setChannelInfo(data.channel);
         setChannelTracks(data.tracks);
         setChannelCont(data.continuation);
-        if (data.channel.id) {
-          navigate({ tab: "artists", entityId: data.channel.id });
-        }
       } finally {
         setSearching(false);
         setOpeningTarget((cur) => (cur === "artist" ? null : cur));
@@ -874,6 +1043,42 @@ export function useNgePlay() {
     }
   }
 
+  async function restoreAlbumById(albumId: string) {
+    if (!albumId) return;
+    setSearching(true);
+    setOpeningTarget("album");
+    try {
+      const data = await cachedFetchYouTubeAlbum(albumId);
+      if (data) setActiveAlbum(data);
+      else setTabState("albums");
+    } finally {
+      setSearching(false);
+      setOpeningTarget((cur) => (cur === "album" ? null : cur));
+    }
+  }
+
+  async function restoreChannelById(channelId: string) {
+    if (!channelId) return;
+    setSearching(true);
+    setOpeningTarget("artist");
+    try {
+      const data = await cachedFetchYouTubeChannel(channelId, undefined);
+      if (data) {
+        setChannelInfo(data.channel);
+        setChannelTracks(data.tracks);
+        setChannelCont(data.continuation);
+      } else {
+        setTabState("artists");
+      }
+    } finally {
+      setSearching(false);
+      setOpeningTarget((cur) => (cur === "artist" ? null : cur));
+    }
+  }
+
+  openAlbumByIdRef.current = restoreAlbumById;
+  openChannelByIdRef.current = restoreChannelById;
+
   async function loadMoreChannel() {
     if (!channelInfo?.id || !channelCont || loadingMore) return;
     setLoadingMore(true);
@@ -902,7 +1107,7 @@ export function useNgePlay() {
     setOpeningTarget(null);
     setActiveAlbum(null);
     setChannelInfo(null);
-    navigate({ tab: "songs" });
+    navigate({ tab: "songs", query: null });
     setActivePlaylistId(pl.id);
     setHeroTitle(pl.title);
     const clientHint = getClientHint();
@@ -917,34 +1122,55 @@ export function useNgePlay() {
     }
   }
 
-  async function handleSearch(searchQuery: string) {
+  async function handleSearch(
+    searchQuery: string,
+    opts?: { recordHistory?: boolean }
+  ) {
     const q = searchQuery.trim();
     if (!q) return;
-    const chMatch = q.match(/(?:music\.)?youtube\.com\/(?:channel\/(UC[\w-]+)|(@[\w.-]+))/i);
-    if (chMatch) return openChannel(chMatch[1] || chMatch[2]);
-    if (q.startsWith("@") && !q.includes(" ")) return openChannel(q);
+    const recordHistory = opts?.recordHistory !== false;
+
+    // URL channel/handle hanya diperlakukan sebagai navigasi saat user menekan
+    // search. Restore dari history/refresh tetap dicari sebagai teks.
+    if (recordHistory) {
+      const chMatch = q.match(/(?:music\.)?youtube\.com\/(?:channel\/(UC[\w-]+)|(@[\w.-]+))/i);
+      if (chMatch) return openChannel(chMatch[1] || chMatch[2]);
+      if (q.startsWith("@") && !q.includes(" ")) return openChannel(q);
+    }
 
     setSearching(true);
     setOpeningTarget(null);
     setActiveAlbum(null);
     setChannelInfo(null);
-    navigate({ tab: "songs", query: q });
-    setActivePlaylistId("");
-    setHeroTitle(`Results: ${q}`);
+    setSearchTitle(`Results: ${q}`);
+    setSearchResults([]);
+    setSearchAlbums([]);
+    setSearchArtists([]);
+    activeSearchRef.current = q;
+
+    if (recordHistory) {
+      navigate({ tab: "search", query: q });
+    } else {
+      setTabState("search");
+      setQuery(q);
+    }
+
     const clientHint = getClientHint();
     try {
       const res = await cachedSearchYouTubeMusic(q, clientHint);
       if (!res.tracks.length && !res.albums.length && !res.artists.length) {
         toast.error("No results found");
       } else {
-        setResults(res.tracks);
-        setAlbums(res.albums);
-        setArtists(res.artists);
+        setSearchResults(res.tracks);
+        setSearchAlbums(res.albums);
+        setSearchArtists(res.artists);
       }
     } finally {
       setSearching(false);
     }
   }
+
+  handleSearchRef.current = handleSearch;
 
   function saveCustomPlaylists(next: CustomPlaylist[]) {
     setCustomPlaylists(next);
@@ -1094,6 +1320,11 @@ export function useNgePlay() {
     trending,
     albums,
     artists,
+    searchResults,
+    searchAlbums,
+    searchArtists,
+    searchTitle,
+    clearSearch,
     activeAlbum,
     searching,
     hydrating,
