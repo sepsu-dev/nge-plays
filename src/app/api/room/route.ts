@@ -32,12 +32,16 @@ interface RoomRecord {
   state: RoomState;
   subscribers: Map<string, RoomSubscriber>;
   hasJoined: boolean;
+  /** Kapan member terakhir pergi; room baru dihapus setelah grace period. */
+  emptySince?: number;
   /** clientId -> token rahasia per member; mencegah spoofing identitas. */
   tokens: Map<string, string>;
 }
 
 const ROOM_PENDING_TTL_MS = 15_000;
 const ROOM_IDLE_TTL_MS = 6 * 3600_000;
+/** Grace period setelah member terakhir putus, supaya reconnect tidak kehilangan room. */
+const ROOM_EMPTY_TTL_MS = 60_000;
 const MAX_USED_CODES = 50_000;
 const MAX_ACTIVE_ROOMS = 1_000;
 const MAX_SUBS_PER_ROOM = 20;
@@ -75,8 +79,11 @@ function rememberUsedCode(code: string) {
 function pruneRooms(now = Date.now()) {
   for (const [code, rec] of rooms) {
     const unjoinedExpired = !rec.hasJoined && now - rec.state.createdAt > ROOM_PENDING_TTL_MS;
-    const idleExpired = now - rec.state.lastActivityAt > ROOM_IDLE_TTL_MS;
-    if (unjoinedExpired || idleExpired) {
+    // Room hanya dihapus kalau member kosong; playback/idle tidak jadi alasan.
+    const idleExpired =
+      rec.subscribers.size === 0 && now - rec.state.lastActivityAt > ROOM_IDLE_TTL_MS;
+    const emptyExpired = rec.emptySince !== undefined && now - rec.emptySince > ROOM_EMPTY_TTL_MS;
+    if (unjoinedExpired || idleExpired || emptyExpired) {
       // Tutup SSE yang masih menempel supaya tidak jadi kebocoran koneksi/memori.
       for (const sub of [...rec.subscribers.values()]) sub.close();
       rooms.delete(code);
@@ -246,9 +253,13 @@ export async function GET(req: NextRequest) {
     }
     const members = buildMembers(rec);
     if (members.length === 0) {
-      rooms.delete(code);
+      // Jangan hapus langsung: SSE bisa putus sesaat (sleep/network) dan
+      // EventSource akan reconnect. Hapus baru setelah grace period.
+      rec.emptySince = Date.now();
+      rec.state = { ...rec.state, members, memberCount: 0 };
       return;
     }
+    rec.emptySince = undefined;
     const now = Date.now();
     rec.state = { ...rec.state, members, memberCount: members.length };
     broadcastRoom(rec, now);
@@ -272,12 +283,22 @@ export async function GET(req: NextRequest) {
         } catch {}
       };
 
+      // Satu clientId = satu subscriber; tutup koneksi lama supaya tidak menumpuk.
+      for (const oldSub of [...rec.subscribers.values()]) {
+        if (oldSub.clientId === clientId) oldSub.close();
+      }
       rec.subscribers.set(subId, { clientId, name, icon, send, close: cleanup });
       g.__ngePlaySubCount = (g.__ngePlaySubCount || 0) + 1;
       rec.hasJoined = true;
+      rec.emptySince = undefined;
       const now = Date.now();
       const members = buildMembers(rec);
-      rec.state = { ...rec.state, members, memberCount: Math.max(1, members.length) };
+      rec.state = {
+        ...rec.state,
+        members,
+        memberCount: Math.max(1, members.length),
+        lastActivityAt: now,
+      };
 
       send("state", { room: rec.state, serverNow: now });
       broadcastRoom(rec, now, subId);
@@ -386,6 +407,7 @@ export async function POST(req: NextRequest) {
     } else {
       memberToken = issueToken(rec, clientId);
     }
+    rec.emptySince = undefined;
     rec.state = { ...rec.state, lastActivityAt: now };
     return NextResponse.json({ room: rec.state, serverNow: now, token: memberToken });
   }

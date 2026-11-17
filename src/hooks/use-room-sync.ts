@@ -127,6 +127,8 @@ export function useRoomSync({
   const lastAppliedVersionRef = useRef(0);
   const eventSourceRef = useRef<EventSource | null>(null);
   const roomTokenRef = useRef("");
+  const rejoinAttemptsRef = useRef(0);
+  const joinRoomRef = useRef<((code: string, silent?: boolean) => Promise<boolean>) | null>(null);
 
   const getClientId = useCallback(() => {
     if (!clientIdRef.current) {
@@ -208,6 +210,7 @@ export function useRoomSync({
     bestRttRef.current = Infinity;
     clockOffsetRef.current = 0;
     lastRoomResyncAtRef.current = 0;
+    rejoinAttemptsRef.current = 0;
     setRoom(null);
     setRoomUrlParam(null);
   }, []);
@@ -311,13 +314,24 @@ export function useRoomSync({
           };
           syncClockOffset(data.serverNow);
           applyRoomSnapshot(data.room, data.serverNow);
+          rejoinAttemptsRef.current = 0;
         } catch {}
       });
       es.onerror = () => {
-        if (es.readyState === EventSource.CLOSED && roomRef.current?.code === code) {
+        if (es.readyState !== EventSource.CLOSED || roomRef.current?.code !== code) return;
+        // Server bisa sempat membuang room saat SSE putus; coba join ulang dulu.
+        if (rejoinAttemptsRef.current >= 2) {
           clearRoomLocal();
           toast.error("Room ended");
+          return;
         }
+        rejoinAttemptsRef.current += 1;
+        void joinRoomRef.current?.(code, true).then((ok) => {
+          if (!ok && roomRef.current?.code === code) {
+            clearRoomLocal();
+            toast.error("Room ended");
+          }
+        });
       };
     },
     [applyRoomSnapshot, clearRoomLocal, getClientId, getMemberIcon, getMemberName, syncClockOffset]
@@ -416,7 +430,7 @@ export function useRoomSync({
     async (rawCode: string, silent = false): Promise<boolean> => {
       const code = sanitizeRoomCode(rawCode);
       if (!code) return false;
-      setRoomBusy(true);
+      if (!silent) setRoomBusy(true);
       const t0 = Date.now();
       try {
         const postJoin = (token: string) =>
@@ -443,7 +457,7 @@ export function useRoomSync({
         }
         if (!res.ok) {
           if (silent) setRoomUrlParam(null);
-          toast.error(res.status === 403 ? "Room access denied" : "Room not found");
+          else toast.error(res.status === 403 ? "Room access denied" : "Room not found");
           return false;
         }
         const data = (await res.json()) as { room: RoomState; serverNow: number; token: string };
@@ -454,17 +468,21 @@ export function useRoomSync({
         applyRoomSnapshot(data.room, data.serverNow);
         setRoomUrlParam(data.room.code);
         connectRoomStream(data.room.code, data.token);
-        toast.success(`Joined room ${data.room.code}`);
+        if (!silent) toast.success(`Joined room ${data.room.code}`);
         return true;
       } catch {
-        toast.error("Failed to join room");
+        if (!silent) toast.error("Failed to join room");
         return false;
       } finally {
-        setRoomBusy(false);
+        if (!silent) setRoomBusy(false);
       }
     },
     [applyRoomSnapshot, connectRoomStream, getClientId, getMemberIcon, getMemberName, syncClockOffset]
   );
+
+  useEffect(() => {
+    joinRoomRef.current = joinRoom;
+  }, [joinRoom]);
 
   const updateMemberProfile = useCallback(
     async (patch: { name?: string; icon?: MemberIconId }): Promise<boolean> => {
