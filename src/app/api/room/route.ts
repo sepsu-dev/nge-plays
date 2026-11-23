@@ -38,10 +38,10 @@ interface RoomRecord {
   tokens: Map<string, string>;
 }
 
-const ROOM_PENDING_TTL_MS = 15_000;
+const ROOM_PENDING_TTL_MS = 60_000;
 const ROOM_IDLE_TTL_MS = 6 * 3600_000;
 /** Grace period setelah member terakhir putus, supaya reconnect tidak kehilangan room. */
-const ROOM_EMPTY_TTL_MS = 60_000;
+const ROOM_EMPTY_TTL_MS = 5 * 60_000;
 const MAX_USED_CODES = 50_000;
 const MAX_ACTIVE_ROOMS = 1_000;
 const MAX_SUBS_PER_ROOM = 20;
@@ -451,20 +451,17 @@ export async function POST(req: NextRequest) {
   }
 
   if (body?.type === "leave") {
-    let removedSub = false;
     for (const sub of rec.subscribers.values()) {
-      if (sub.clientId === clientId) {
-        removedSub = true;
-        sub.close();
-      }
+      if (sub.clientId === clientId) sub.close();
     }
     rec.tokens.delete(clientId);
     const members = buildMembers(rec);
-    if (members.length === 0) {
-      rooms.delete(code);
-    } else if (!removedSub) {
-      rec.state = { ...rec.state, members, memberCount: members.length };
+    rec.state = { ...rec.state, members, memberCount: members.length };
+    if (members.length > 0) {
       broadcastRoom(rec, now);
+    } else {
+      // Jangan hapus langsung: member lain bisa reconnect. Prune setelah grace period.
+      rec.emptySince = now;
     }
     return NextResponse.json({ ok: true });
   }
