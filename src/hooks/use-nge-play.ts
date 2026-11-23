@@ -231,6 +231,10 @@ export function useNgePlay() {
   const activeTrackIdRef = useRef<string>("");
   const userKeyRef = useRef("guest");
   const pendingResumeRef = useRef<PendingResume | null>(null);
+  // Keeps the "should be playing" intent from the restored session until the player
+  // really reports PLAYING (or the user pauses). Without it any state change that runs
+  // saveSession() during boot writes isPlaying:false and the next refresh stays paused.
+  const resumeIntentRef = useRef<boolean | null>(null);
   const playerRef = useRef<RoomPlayerBridge | null>(null);
   const onTrackEndedRef = useRef<() => boolean>(() => false);
   const onPlayerPlayingRef = useRef<(actualTime: number) => void>(() => {});
@@ -456,7 +460,9 @@ export function useNgePlay() {
         currentTime: overrides?.currentTime ?? clock.getSnapshot().currentTime,
         isPlaying:
           overrides?.isPlaying ??
-          (pendingResumeRef.current ? pendingResumeRef.current.autoPlay : s.isPlaying),
+          (pendingResumeRef.current
+            ? pendingResumeRef.current.autoPlay
+            : resumeIntentRef.current ?? s.isPlaying),
         volume: overrides?.volume ?? s.volume,
         muted: overrides?.muted ?? s.muted,
         repeat: overrides?.repeat ?? s.repeat,
@@ -515,6 +521,7 @@ export function useNgePlay() {
       if (!track) return;
 
       hasUserPlaybackRef.current = true;
+      resumeIntentRef.current = null;
       queueRef.current = list;
       currentIndexRef.current = index;
       activeTrackIdRef.current = track.id;
@@ -623,6 +630,7 @@ export function useNgePlay() {
   }, [clock, player, playTrackAt, sendRoomCommand]);
 
   const handleTogglePlay = useCallback(() => {
+    resumeIntentRef.current = null;
     if (!roomRef.current) {
       player.togglePlay();
       return;
@@ -647,6 +655,7 @@ export function useNgePlay() {
   );
 
   const handlePlayAction = useCallback(() => {
+    resumeIntentRef.current = null;
     player.playVideo();
     if (roomRef.current) {
       void sendRoomCommand({ type: "play", atTime: clock.getSnapshot().currentTime });
@@ -654,6 +663,7 @@ export function useNgePlay() {
   }, [clock, player, sendRoomCommand]);
 
   const handlePauseAction = useCallback(() => {
+    resumeIntentRef.current = false;
     player.pauseVideo();
     if (roomRef.current) {
       void sendRoomCommand({ type: "pause", atTime: clock.getSnapshot().currentTime });
@@ -745,10 +755,13 @@ export function useNgePlay() {
         if (typeof bestSession.repeat === "boolean") setRepeat(bestSession.repeat);
         if (typeof bestSession.shuffle === "boolean") setShuffle(bestSession.shuffle);
         if (restoredTrack?.id) {
+          resumeIntentRef.current = bestSession.isPlaying !== false;
           pendingResumeRef.current = {
             videoId: restoredTrack.id,
             seekTo: restoredTime,
-            autoPlay: Boolean(bestSession.isPlaying),
+            // Older stored sessions may miss the flag; only an explicit `false` means the
+            // user left the player paused.
+            autoPlay: bestSession.isPlaying !== false,
           };
         }
       } else if (joinedRoom && bestSession) {
@@ -915,6 +928,7 @@ export function useNgePlay() {
   }, [nowPlayingOpen, nowPlayingTab, currentTrack?.id]);
 
   onPlayerPlayingRef.current = (actualTime: number) => {
+    resumeIntentRef.current = null;
     setPlaybackSignal((n) => n + 1);
     handleRoomPlayerPlaying(actualTime);
   };

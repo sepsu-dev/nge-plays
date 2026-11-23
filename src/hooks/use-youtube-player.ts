@@ -102,6 +102,10 @@ export function useYoutubePlayer({
   // One host fallback per session: every rebuild creates a new iframe, which re-runs the
   // widget-api handshake (and its harmless cross-origin postMessage warning). Never loop.
   const hostFallbackUsedRef = useRef(false);
+  // Resume-after-refresh helpers: YouTube ignores a `playVideo()` issued too early, and
+  // browsers reject an audible autoplay that has no user activation.
+  const resumeAttemptTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const gestureUnlockCleanupRef = useRef<(() => void) | null>(null);
 
   const optsRef = useRef({ isPlaying, volume, muted, repeat, shuffle });
   optsRef.current = { isPlaying, volume, muted, repeat, shuffle };
@@ -157,6 +161,64 @@ export function useYoutubePlayer({
     }
   }, []);
 
+  const clearResumeAttempts = useCallback(() => {
+    for (const id of resumeAttemptTimersRef.current) clearTimeout(id);
+    resumeAttemptTimersRef.current = [];
+  }, []);
+
+  const detachGestureUnlock = useCallback(() => {
+    gestureUnlockCleanupRef.current?.();
+    gestureUnlockCleanupRef.current = null;
+  }, []);
+
+  const kickPlayback = useCallback(() => {
+    const player = playerRef.current;
+    if (!player || !readyRef.current || !wantAutoPlayRef.current) return;
+    if (Date.now() - manualPauseAtRef.current < 1500) return;
+    const st = player.getPlayerState?.();
+    if (st === 1 || st === 3) return;
+    syncPlayerAudio(player);
+    player.playVideo?.();
+  }, [syncPlayerAudio]);
+
+  // A rejected autoplay can only be unlocked by a real user gesture, so arm a one-shot
+  // listener: any tap/keypress on the page resumes playback immediately.
+  const armGestureUnlock = useCallback(() => {
+    if (gestureUnlockCleanupRef.current || typeof window === "undefined") return;
+    const unlock = () => {
+      detachGestureUnlock();
+      clearResumeAttempts();
+      kickPlayback();
+    };
+    window.addEventListener("pointerdown", unlock, { passive: true });
+    window.addEventListener("touchstart", unlock, { passive: true });
+    window.addEventListener("keydown", unlock);
+    gestureUnlockCleanupRef.current = () => {
+      window.removeEventListener("pointerdown", unlock);
+      window.removeEventListener("touchstart", unlock);
+      window.removeEventListener("keydown", unlock);
+    };
+  }, [clearResumeAttempts, detachGestureUnlock, kickPlayback]);
+
+  // Retry `playVideo()` a few times after a restore. A single call made straight from
+  // onReady is often dropped while the iframe is still attaching.
+  const scheduleResumeAttempts = useCallback(() => {
+    clearResumeAttempts();
+    resumeAttemptTimersRef.current = [0, 350, 900, 1600, 2600].map((delay) =>
+      setTimeout(() => {
+        if (!wantAutoPlayRef.current) return;
+        const st = playerRef.current?.getPlayerState?.();
+        if (st === 1 || st === 3) {
+          clearResumeAttempts();
+          detachGestureUnlock();
+          return;
+        }
+        kickPlayback();
+        if (delay === 2600) armGestureUnlock();
+      }, delay)
+    );
+  }, [armGestureUnlock, clearResumeAttempts, detachGestureUnlock, kickPlayback]);
+
   const scheduleBackgroundEnsure = useCallback(() => {
     clearBgProbes();
     const timers: ReturnType<typeof setTimeout>[] = [];
@@ -204,6 +266,8 @@ export function useYoutubePlayer({
       if (isHidden) hiddenAtRef.current = Date.now();
       clearBgTimers();
       clearBgProbes();
+      clearResumeAttempts();
+      detachGestureUnlock();
       clock.set(startSeconds, 0);
       if (readyRef.current && playerRef.current?.loadVideoById) {
         loadingTargetIdRef.current = videoId;
@@ -220,7 +284,7 @@ export function useYoutubePlayer({
         pendingResumeRef.current = { videoId, seekTo: startSeconds, autoPlay };
       }
     },
-    [clearBgProbes, clearBgTimers, clock, pendingResumeRef, scheduleBackgroundEnsure, syncPlayerAudio]
+    [clearBgProbes, clearBgTimers, clearResumeAttempts, clock, detachGestureUnlock, pendingResumeRef, scheduleBackgroundEnsure, syncPlayerAudio]
   );
 
   const playVideo = useCallback(() => {
@@ -245,9 +309,11 @@ export function useYoutubePlayer({
     wantAutoPlayRef.current = false;
     clearBgTimers();
     clearBgProbes();
+    clearResumeAttempts();
+    detachGestureUnlock();
     if (readyRef.current) playerRef.current?.pauseVideo?.();
     else if (pendingResumeRef.current) pendingResumeRef.current.autoPlay = false;
-  }, [clearBgProbes, clearBgTimers, pendingResumeRef]);
+  }, [clearBgProbes, clearBgTimers, clearResumeAttempts, detachGestureUnlock, pendingResumeRef]);
 
   const togglePlay = useCallback(() => {
     if (!readyRef.current || !playerRef.current) return;
@@ -359,18 +425,7 @@ export function useYoutubePlayer({
               if (action.autoPlay) {
                 if (action.seekTo > 1) e.target.seekTo(action.seekTo, true);
                 e.target.playVideo();
-                setTimeout(() => {
-                  const st = e.target.getPlayerState?.();
-                  if (st !== 1 && st !== 3) {
-                    const unlock = () => {
-                      e.target.playVideo?.();
-                      window.removeEventListener("pointerdown", unlock);
-                      window.removeEventListener("keydown", unlock);
-                    };
-                    window.addEventListener("pointerdown", unlock, { once: true });
-                    window.addEventListener("keydown", unlock, { once: true });
-                  }
-                }, 900);
+                scheduleResumeAttempts();
               } else if (Math.floor(action.seekTo) !== initStartSecRef.current) {
                 e.target.cueVideoById?.(initVideoIdRef.current, Math.floor(action.seekTo));
               }
@@ -416,6 +471,8 @@ export function useYoutubePlayer({
             }
             if (e.data === S.PLAYING) {
               clearBgTimers();
+              clearResumeAttempts();
+              detachGestureUnlock();
               bgRetryCountRef.current = 0;
               wantAutoPlayRef.current = true;
               syncPlayerAudio(e.target);
@@ -482,6 +539,23 @@ export function useYoutubePlayer({
                 }
                 return;
               }
+              // Autoplay refused by the browser (or dropped by YouTube while the iframe was
+              // still attaching) also surfaces as PAUSED, with no user intent behind it.
+              // Retry instead of declaring a pause: persisting "paused" here is what made
+              // every refresh land on a paused player. A pause at the very end of the track
+              // is left alone so ENDED can still advance the queue.
+              const dur = e.target.getDuration?.() || 0;
+              const cur = e.target.getCurrentTime?.() || 0;
+              const atEnd = dur > 0 && cur >= dur - 1.5;
+              if (
+                !atEnd &&
+                wantAutoPlayRef.current &&
+                Date.now() - manualPauseAtRef.current > 1500
+              ) {
+                if (resumeAttemptTimersRef.current.length) armGestureUnlock();
+                else scheduleResumeAttempts();
+                return;
+              }
               clearBgTimers();
               wantAutoPlayRef.current = false;
               callbacksRef.current.setIsPlaying(false);
@@ -508,6 +582,7 @@ export function useYoutubePlayer({
           },
           onError: (e: any) => {
             clearBgTimers();
+            clearResumeAttempts();
             wantAutoPlayRef.current = false;
             loadingTargetIdRef.current = null;
             seenTransitionRef.current = false;
@@ -565,14 +640,26 @@ export function useYoutubePlayer({
   }, [
     currentTrack?.id,
     activeTrackIdRef,
+    armGestureUnlock,
     clearBgTimers,
+    clearResumeAttempts,
     clock,
     currentIndexRef,
+    detachGestureUnlock,
     embedHost,
     pendingResumeRef,
     queueRef,
+    scheduleResumeAttempts,
     syncPlayerAudio,
   ]);
+
+  useEffect(
+    () => () => {
+      clearResumeAttempts();
+      detachGestureUnlock();
+    },
+    [clearResumeAttempts, detachGestureUnlock]
+  );
 
   useEffect(() => {
     const flush = () => {
