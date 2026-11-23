@@ -4,7 +4,7 @@ import { X } from "lucide-react";
 
 interface NewPlaylistModalProps {
   open: boolean;
-  /** "create" untuk playlist baru, "rename" untuk mengganti nama playlist yang ada. */
+  /** "create" for a new playlist, "rename" to rename an existing one. */
   mode?: "create" | "rename";
   name: string;
   onNameChange: (name: string) => void;

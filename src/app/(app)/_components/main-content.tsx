@@ -10,11 +10,11 @@ import { TrackListView } from "@/components/library/track-list-view";
 import { normalizePlaylistId } from "@/lib/routes";
 
 /**
- * Konten utama per menu. Semua menu dirender di halaman `/` yang sama (SPA),
- * jadi pindah menu hanya mengganti state — tidak ada navigasi router, fetch RSC,
- * atau remount player.
+ * Main content per menu. Every menu renders on the same `/` page (SPA),
+ * so switching menus only swaps state — no router navigation, no RSC fetch,
+ * and no player remount.
  */
-// useLayoutEffect tidak jalan di server; pakai useEffect saat SSR agar tidak warning.
+// useLayoutEffect does not run on the server; use useEffect during SSR to avoid a warning.
 const useIsomorphicLayoutEffect = typeof window !== "undefined" ? useLayoutEffect : useEffect;
 
 export function MainContent() {
@@ -22,8 +22,8 @@ export function MainContent() {
   const contentRef = useRef<HTMLDivElement>(null);
   const prevTabRef = useRef<string | null>(null);
 
-  // Animasi transisi menu memakai Web Animations API: pasti diputar ulang tiap
-  // tab berganti (tidak bergantung pada reflow class) dan tanpa me-remount subtree.
+  // The menu transition animation uses the Web Animations API: it always replays on
+  // tab change (no class-reflow dependency) and without remounting the subtree.
   useIsomorphicLayoutEffect(() => {
     if (prevTabRef.current === s.tab) return;
     prevTabRef.current = s.tab;
@@ -36,7 +36,7 @@ export function MainContent() {
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     if (typeof el.animate !== "function") return;
 
-    // Batalkan animasi sebelumnya kalau user pindah menu cepat.
+    // Cancel the previous animation when the user switches menus quickly.
     el.getAnimations().forEach((anim) => anim.cancel());
 
     el.animate(
@@ -107,8 +107,8 @@ export function MainContent() {
     s.tab === "search"
       ? s.searching
       : s.tab === "playlist"
-      ? // Jangan tampilkan halaman kosong: selama boot atau saat id playlist tidak
-        // ditemukan, tetap tampilkan skeleton.
+      ? // Never show an empty page: during boot or while the playlist id is not
+        // found yet, keep showing the skeleton.
         s.hydrating || !activeCustomPlaylist
       : s.tab === "liked" || s.tab === "history"
       ? s.hydrating

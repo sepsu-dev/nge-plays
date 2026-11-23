@@ -48,10 +48,10 @@ export default function RootLayout({
       </head>
       <body className="antialiased font-sans min-h-screen bg-white text-[#18181B]">
         {/*
-          `beforeInteractive` menaruh script inline ini di <head> HTML awal dan mem-
-          biarkannya dieksekusi sebelum React hydration. <script> biasa di dalam
-          komponen tidak pernah dieksekusi saat render di client (React 19), jadi
-          harus lewat next/script.
+          `beforeInteractive` puts this inline script in the initial <head> HTML and
+          lets it run before React hydration. A plain <script> inside a component is
+          never executed during client render (React 19), so it must go through
+          next/script.
         */}
         <Script id="ngeplay-unregister-sw" strategy="beforeInteractive">
           {`'serviceWorker' in navigator && navigator.serviceWorker.getRegistrations().then(r => r.forEach(w => w.unregister()));'caches' in window && caches.keys().then(k => k.filter(n => n.startsWith('ngeplay-')).forEach(caches.delete.bind(caches)));`}

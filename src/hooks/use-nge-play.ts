@@ -89,9 +89,9 @@ function cachedFetchYouTubeAlbum(albumId: string) {
 }
 
 export function useNgePlay() {
-  // Semua menu hidup di satu halaman (SPA). `tab` adalah satu-satunya sumber
-  // kebenaran menu aktif; tidak ada router yang dipanggil saat pindah menu,
-  // sehingga transisi instan dan player tidak pernah ter-remount.
+  // Every menu lives on a single page (SPA). `tab` is the single source of
+  // truth for the active menu; no router is called when switching menus, so
+  // transitions are instant and the player is never remounted.
   const [tab, setTabState] = useState<TabId>("home");
 
   const [mobileVolOpen, setMobileVolOpen] = useState(false);
@@ -119,7 +119,7 @@ export function useNgePlay() {
   const [activeCustomPlId, setActiveCustomPlId] = useState("");
   const [newPlaylistOpen, setNewPlaylistOpen] = useState(false);
   const [newPlaylistName, setNewPlaylistName] = useState("");
-  // Modal playlist dipakai untuk dua hal: membuat baru ("create") atau mengganti nama ("rename").
+  // The playlist modal serves two purposes: create a new one ("create") or rename an existing one ("rename").
   const [playlistModalMode, setPlaylistModalMode] = useState<"create" | "rename">("create");
   const [renamePlaylistId, setRenamePlaylistId] = useState("");
   const [trackMenu, setTrackMenu] = useState<TrackMenuState | null>(null);
@@ -154,9 +154,9 @@ export function useNgePlay() {
   const [muted, setMuted] = useState(false);
   const [repeat, setRepeat] = useState(false);
   const [shuffle, setShuffle] = useState(false);
-  // Navigasi menu = perubahan state murni (tanpa router.push), jadi tidak ada
-  // fetch RSC / loading antar menu. History API dipakai supaya Back/Forward
-  // mengembalikan view sebelumnya (termasuk hasil search).
+  // Menu navigation = pure state change (no router.push), so there is no
+  // RSC fetch / loading between menus. The History API is used so Back/Forward
+  // restores the previous view (including search results).
   const navigate = useCallback(
     (
       next: { tab: TabId; entityId?: string; query?: string | null },
@@ -182,8 +182,8 @@ export function useNgePlay() {
         activeSearchRef.current = "";
       }
 
-      // Pindah ke menu/detail mana pun selain search = reset search.
-      // Entry search tetap ada di history, jadi Back masih bisa mengembalikannya.
+      // Switching to any menu/detail other than search = reset search.
+      // The search entry stays in history, so Back can still restore it.
       if (next.tab !== "search") {
         setQuery("");
         activeSearchRef.current = "";
@@ -205,7 +205,7 @@ export function useNgePlay() {
     []
   );
 
-  // Pindah menu dari sidebar/footer: selalu mulai dari daftar, bukan detail lama.
+  // Switching menus from the sidebar/footer: always start from the list, not the old detail.
   const setTab = useCallback(
     (next: TabId) => {
       navigate({ tab: next });
@@ -285,7 +285,7 @@ export function useNgePlay() {
     lyricOffset,
   ]);
 
-  // Clear search: kembali ke menu terakhir dan hapus ?search= dari entry aktif.
+  // Clear search: go back to the last menu and remove ?search= from the active entry.
   const clearSearch = useCallback(() => {
     setQuery("");
     activeSearchRef.current = "";
@@ -298,7 +298,7 @@ export function useNgePlay() {
     }
   }, [navigate]);
 
-  // Samakan entry history aktif dengan view yang tampil (mis. hasil boot restore).
+  // Keep the active history entry in sync with the visible view (e.g. a boot restore).
   useEffect(() => {
     if (typeof window === "undefined") return;
     const current = readViewHistory(window.history.state);
@@ -309,7 +309,7 @@ export function useNgePlay() {
     writeViewHistory({ tab, search }, window.location.href, "replace");
   }, [tab]);
 
-  // Back/Forward: restore tab, search, atau detail dari history state.
+  // Back/Forward: restore the tab, search, or detail from history state.
   useEffect(() => {
     if (typeof window === "undefined") return;
     const onPopState = (event: PopStateEvent) => {
@@ -327,7 +327,7 @@ export function useNgePlay() {
         setTabState("home");
         return;
       }
-      // Semua path di bawah ini bukan search: reset state search.
+      // Every path below is not search: reset the search state.
       setQuery("");
       activeSearchRef.current = "";
       setSearchResults([]);
@@ -335,7 +335,7 @@ export function useNgePlay() {
       setSearchArtists([]);
       setSearchTitle("");
       if (view.tab === "search") {
-        // Entry search tanpa query (jarang) -> kembali ke menu terakhir.
+        // Search entry without a query (rare) -> go back to the last menu.
         setTabState(lastMenuTabRef.current);
         return;
       }
@@ -708,8 +708,8 @@ export function useNgePlay() {
       const parsedLiked = Array.isArray(storedLiked) ? storedLiked : [];
       const parsedHistory = Array.isArray(storedHistory) ? storedHistory : [];
       const storedPlsRaw = Array.isArray(storedPls) ? storedPls : [];
-      // Playlist lama bisa punya id `pl_<timestamp>`; naikkan ke UUID sekali di sini
-      // supaya data tersimpan konsisten memakai UUID.
+      // Old playlists may have ids like `pl_<timestamp>`; upgrade them to UUID once here
+      // so stored data stays consistent with UUIDs.
       const migrated = migratePlaylistIds(storedPlsRaw);
       if (migrated.playlists !== storedPlsRaw) {
         void writeStored("playlists", uid, migrated.playlists);
@@ -756,8 +756,8 @@ export function useNgePlay() {
         if (typeof bestSession.muted === "boolean") setMuted(bestSession.muted);
       }
 
-      // Menu terakhir dipulihkan dari sesi. URL tidak lagi menyimpan tab karena
-      // semua menu hidup di `/` (SPA), jadi sesi adalah satu-satunya sumbernya.
+      // The last menu is restored from the session. The URL no longer stores the tab because
+      // every menu lives in `/` (SPA), so the session is the only source.
       if (
         !joinedRoom &&
         bestSession &&
@@ -824,8 +824,8 @@ export function useNgePlay() {
       } finally {
         if (!cancelled) {
           setSearching(false);
-          // Refresh di `/?search=...`: jalankan ulang pencarian setelah explore
-          // selesai, supaya hasil search tidak ditimpa data explore.
+          // Refresh on `/?search=...`: re-run the search after explore
+          // finishes, so search results are not overwritten by explore data.
           const initialSearch = readSearchParam(window.location.search);
           if (initialSearch) {
             void handleSearchRef.current(initialSearch, { recordHistory: false });
@@ -1001,13 +1001,13 @@ export function useNgePlay() {
           setTab("artists");
           return;
         }
-        // Push entry detail SEBELUM fetch supaya entry sebelumnya (mis. search)
-        // tidak tertimpa oleh transisi tab sementara.
+        // Push the detail entry BEFORE fetching so the previous entry (e.g. search)
+        // is not overwritten by the temporary tab transition.
         navigate({ tab: "artists", entityId: cid });
         const data = await cachedFetchYouTubeChannel(cid, undefined, knownName);
         if (!data) {
           toast.error("Failed to load artist tracks");
-          // Data artis gagal dimuat -> kembali ke daftar artis.
+          // Artist data failed to load -> go back to the artists list.
           setTab("artists");
           return;
         }
@@ -1130,8 +1130,8 @@ export function useNgePlay() {
     if (!q) return;
     const recordHistory = opts?.recordHistory !== false;
 
-    // URL channel/handle hanya diperlakukan sebagai navigasi saat user menekan
-    // search. Restore dari history/refresh tetap dicari sebagai teks.
+    // A channel/handle URL is only treated as navigation when the user presses
+    // search. Restoring from history/refresh still searches it as plain text.
     if (recordHistory) {
       const chMatch = q.match(/(?:music\.)?youtube\.com\/(?:channel\/(UC[\w-]+)|(@[\w.-]+))/i);
       if (chMatch) return openChannel(chMatch[1] || chMatch[2]);
@@ -1180,7 +1180,7 @@ export function useNgePlay() {
   function createCustomPlaylist(name: string) {
     const trimmed = name.trim();
     if (!trimmed) return;
-    // Id = UUID sehingga URL tetap sama walau nama playlist diubah:
+    // The id is a UUID so the URL stays the same even if the playlist name changes:
     // /library/playlist/9f1c2a3e-...
     const id = createPlaylistId();
     const created: CustomPlaylist = {
@@ -1196,7 +1196,7 @@ export function useNgePlay() {
     toast.success(`Created "${trimmed}"`);
   }
 
-  // Buka modal dalam mode "buat baru" (dipakai sidebar/context menu/library).
+  // Open the modal in "create" mode (used by sidebar/context menu/library).
   function openCreatePlaylist() {
     setPlaylistModalMode("create");
     setRenamePlaylistId("");
@@ -1204,7 +1204,7 @@ export function useNgePlay() {
     setNewPlaylistOpen(true);
   }
 
-  // Buka modal dalam mode "ganti nama", input langsung berisi nama saat ini.
+  // Open the modal in "rename" mode, pre-filling the input with the current name.
   function openRenamePlaylist(playlistId: string) {
     const target = customPlaylists.find((p) => p.id === playlistId);
     if (!target) return;
@@ -1224,7 +1224,7 @@ export function useNgePlay() {
       setNewPlaylistName("");
       return;
     }
-    // Id berupa UUID, jadi rename hanya mengganti nama — URL playlist tetap.
+    // The id is a UUID, so renaming only changes the name — the playlist URL stays the same.
     const next = customPlaylists.map((p) =>
       p.id === target.id ? { ...p, name: trimmed } : p
     );
@@ -1257,8 +1257,8 @@ export function useNgePlay() {
   function deleteCustomPlaylist(playlistId: string) {
     saveCustomPlaylists(customPlaylists.filter((p) => p.id !== playlistId));
     if (activeCustomPlId === playlistId) {
-      // Hapus = keluar dari detail playlist. Selalu kembali ke Library (bukan home),
-      // supaya user langsung melihat daftar playlist yang tersisa.
+      // Delete = leave the playlist detail. Always go back to Library (not home),
+      // so the user immediately sees the remaining playlists.
       setActiveCustomPlId("");
       setTab("library");
     }

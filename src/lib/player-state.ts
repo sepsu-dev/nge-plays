@@ -6,28 +6,28 @@ export interface CustomPlaylist {
   tracks: Track[];
 }
 
-/** Format id playlist yang dipakai di URL: UUID RFC 4122 (v1-v5). */
+/** The playlist id format used in URLs: an RFC 4122 UUID (v1-v5). */
 const PLAYLIST_UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-/** True bila `id` sudah berupa UUID — satu-satunya bentuk id yang aman untuk URL. */
+/** True when `id` is already a UUID — the only id shape that is safe for URLs. */
 export function isPlaylistId(id: string): boolean {
   return PLAYLIST_UUID_RE.test(id.trim());
 }
 
 /**
- * Id playlist berupa UUID supaya URL tidak bergantung pada nama:
- * rename playlist tidak mengubah link, dan dua playlist dengan nama sama
- * tetap punya id berbeda. Contoh: /library/playlist/9f1c2a3e-...
+ * Playlist ids are UUIDs so URLs do not depend on the name:
+ * renaming a playlist does not change the link, and two playlists with the same name
+ * still get different ids. Example: /library/playlist/9f1c2a3e-...
  *
- * Playlist lama yang sudah tersimpan dengan id non-UUID (mis. `pl_<timestamp>`)
- * dimigrasikan lewat migratePlaylistIds saat boot.
+ * Legacy playlists already stored with a non-UUID id (e.g. `pl_<timestamp>`)
+ * are migrated via migratePlaylistIds on boot.
  */
 export function createPlaylistId(): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
     return crypto.randomUUID();
   }
-  // Fallback untuk browser lama / konteks non-secure (randomUUID butuh secure context).
+  // Fallback for old browsers / non-secure contexts (randomUUID needs a secure context).
   const bytes = new Uint8Array(16);
   if (typeof crypto !== "undefined" && typeof crypto.getRandomValues === "function") {
     crypto.getRandomValues(bytes);
@@ -36,16 +36,16 @@ export function createPlaylistId(): string {
       bytes[i] = Math.floor(Math.random() * 256);
     }
   }
-  bytes[6] = (bytes[6] & 0x0f) | 0x40; // versi 4
-  bytes[8] = (bytes[8] & 0x3f) | 0x80; // varian RFC 4122
+  bytes[6] = (bytes[6] & 0x0f) | 0x40; // version 4
+  bytes[8] = (bytes[8] & 0x3f) | 0x80; // RFC 4122 variant
   const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
 /**
- * Naikkan semua id playlist lama (non-UUID) ke UUID tanpa mengubah isi playlist.
- * `aliases` memetakan id lama -> UUID baru, sehingga link/bookmark lama tetap
- * bisa dibuka lalu diarahkan ke URL UUID.
+ * Upgrade all legacy (non-UUID) playlist ids to UUIDs without changing playlist contents.
+ * `aliases` maps the old id -> new UUID, so old links/bookmarks still
+ * resolve and redirect to the UUID URL.
  */
 export function migratePlaylistIds(
   playlists: CustomPlaylist[],

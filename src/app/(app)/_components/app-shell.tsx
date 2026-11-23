@@ -13,11 +13,11 @@ import { usePlayer } from "./player-provider";
 import { ROUTES } from "@/lib/routes";
 
 /**
- * Shell aplikasi: header, sidebar, footer, overlay, dan host iframe YouTube.
- * Karena berada di layout (bukan di halaman), pindah menu tidak me-remount player.
+ * App shell: header, sidebar, footer, overlays, and the YouTube iframe host.
+ * Because it lives in the layout (not on a page), switching menus never remounts the player.
  *
- * Semua menu hidup di `/` (SPA). `/room` adalah satu-satunya route tambahan:
- * deep link Listen Together yang otomatis membuka modal room.
+ * All menus live in `/` (SPA). `/room` is the only extra route:
+ * a Listen Together deep link that opens the room modal automatically.
  */
 export function AppShell({ children }: { children: React.ReactNode }) {
   const s = usePlayer();
@@ -27,8 +27,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const roomRouteOpenedRef = useRef(false);
   const isCurrentLiked = s.liked.some((t) => t.id === s.currentTrack?.id);
 
-  // `/room` = deep link: buka modal room sekali, lalu kalau modal ditutup
-  // kembalikan URL ke `/` (tetap bawa ?room=CODE supaya refresh tidak keluar room).
+  // `/room` = deep link: open the room modal once, then when the modal closes
+  // restore the URL to `/` (keep ?room=CODE so a refresh stays inside the room).
   useEffect(() => {
     if (!isRoomRoute) {
       if (roomRouteOpenedRef.current) {

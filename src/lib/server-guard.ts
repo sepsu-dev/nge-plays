@@ -2,9 +2,9 @@ import { headers } from "next/headers";
 import { isIP } from "node:net";
 
 /**
- * Guard untuk Server Actions yang memanggil layanan eksternal (YouTube, lrclib).
- * In-memory per instance — cukup untuk single-node; pakai Redis/edge limiter
- * kalau deploy multi-instance.
+ * Guard for Server Actions that call external services (YouTube, lrclib).
+ * In-memory per instance — good enough for a single node; use a Redis/edge limiter
+ * when deploying multiple instances.
  */
 
 interface Bucket {

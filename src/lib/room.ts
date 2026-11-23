@@ -120,9 +120,9 @@ function safeHttpsUrl(value: unknown, max = 500): string {
 }
 
 /**
- * Whitelist satu track dari input klien (room API). Field asing dibuang dan
- * panjang string dibatasi supaya payload room tidak bisa dipakai untuk
- * membengkakkan memori/bandwidth atau menyimpan data aneh.
+ * Whitelist a single track from client input (room API). Unknown fields are dropped and
+ * string lengths are capped so the room payload cannot be used to
+ * bloat memory/bandwidth or store odd data.
  */
 export function normalizeTrack(raw: unknown): Track | null {
   if (!raw || typeof raw !== "object") return null;

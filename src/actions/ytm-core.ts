@@ -52,7 +52,7 @@ type YtmPost = (
 
 // ponytail: in-memory cache for track durations, capped at 1500 items
 const DURATION_CACHE_MAX = 1500;
-// Batas jumlah track per request supaya action tidak bisa dipakai untuk membanjiri YouTube.
+// Cap the number of tracks per request so this action cannot be used to flood YouTube.
 const MAX_HYDRATE_TRACKS = 200;
 const durationCache = new Map<string, string>();
 
@@ -80,8 +80,8 @@ export async function hydrateDurations<T extends Track>(
       chunks.push(missingIds.slice(i, i + 40));
     }
 
-    // Sequential (bukan Promise.all) agar satu request klien tidak memicu
-    // banyak panggilan keluar sekaligus.
+    // Sequential (not Promise.all) so a single client request does not trigger
+    // many outbound calls at once.
     for (const videoIds of chunks) {
       const res = await ytmPost("music/get_queue", { videoIds });
       if (!res) continue;

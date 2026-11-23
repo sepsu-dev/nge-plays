@@ -319,7 +319,7 @@ export function useRoomSync({
       });
       es.onerror = () => {
         if (es.readyState !== EventSource.CLOSED || roomRef.current?.code !== code) return;
-        // Server bisa sempat membuang room saat SSE putus; coba join ulang dulu.
+        // The server may have dropped the room while SSE was down; try rejoining first.
         if (rejoinAttemptsRef.current >= 2) {
           clearRoomLocal();
           toast.error("Room ended");
@@ -449,7 +449,7 @@ export function useRoomSync({
 
         let storedToken = getRoomToken(code);
         let res = await postJoin(storedToken);
-        // Token lokal bisa basi (mis. storage dibersihkan); coba sekali tanpa token.
+        // The local token may be stale (e.g. storage was cleared); retry once without it.
         if (res.status === 403 && storedToken) {
           deleteRoomToken(code);
           storedToken = "";

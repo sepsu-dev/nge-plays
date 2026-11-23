@@ -1,22 +1,22 @@
 import { isPlaylistId } from "@/lib/player-state";
 
 /**
- * URL aplikasi.
+ * App URLs.
  *
- * Menu (Home, Songs, Albums, Artists, Library, Queue, detail album/artist/
- * playlist) sengaja TIDAK punya route sendiri: semuanya hidup di `/` sebagai
- * SPA. Pindah menu hanya mengubah state, jadi tidak ada fetch RSC, tidak ada
- * remount halaman, dan player tidak pernah terputus.
+ * Menus (Home, Songs, Albums, Artists, Library, Queue, album/artist/playlist
+ * detail) deliberately have NO route of their own: they all live in `/` as an
+ * SPA. Switching menus only changes state, so there is no RSC fetch, no
+ * page remount, and the player is never disconnected.
  *
- * `/room` tetap jadi route nyata satu-satunya karena dipakai sebagai link share
- * "Listen Together" (`/room?room=CODE`) yang bisa dibuka langsung/refresh.
+ * `/room` remains the only real route because it is used as the share link for
+ * "Listen Together" (`/room?room=CODE`), which must open directly / on refresh.
  */
 export const ROUTES = {
   home: "/",
   room: "/room",
 } as const;
 
-/** Link share room. `origin` opsional supaya hasilnya URL absolut saat dipakai di browser. */
+/** Room share link. `origin` is optional so the result is an absolute URL when used in the browser. */
 export function roomLink(code: string, origin = ""): string {
   return `${origin}${ROUTES.room}?room=${encodeURIComponent(code)}`;
 }
@@ -24,12 +24,12 @@ export function roomLink(code: string, origin = ""): string {
 const SEARCH_PARAM = "search";
 const MAX_SEARCH_LEN = 150;
 
-/** Baca query pencarian dari `?search=...` (dipakai saat boot/refresh). */
+/** Read the search query from `?search=...` (used on boot/refresh). */
 export function readSearchParam(search: string): string {
   return (new URLSearchParams(search).get(SEARCH_PARAM) || "").trim().slice(0, MAX_SEARCH_LEN);
 }
 
-/** Bangun path + query tanpa menyentuh router Next. */
+/** Build a path + query without touching the Next router. */
 export function searchPath(pathname: string, search: string, query: string | null): string {
   const params = new URLSearchParams(search);
   if (query) params.set(SEARCH_PARAM, query.trim().slice(0, MAX_SEARCH_LEN));
@@ -38,8 +38,8 @@ export function searchPath(pathname: string, search: string, query: string | nul
   return `${pathname}${qs ? `?${qs}` : ""}`;
 }
 
-/** Samakan id playlist dari URL/state. UUID selalu huruf kecil; id lama dibiarkan
- *  apa adanya agar tetap cocok dengan data tersimpan (lookup case-insensitive). */
+/** Normalize a playlist id from URL/state. UUIDs are always lowercase; legacy ids are left
+ *  as-is so they still match stored data (case-insensitive lookup). */
 export function normalizePlaylistId(id: string): string {
   const trimmed = id.trim();
   return isPlaylistId(trimmed) ? trimmed.toLowerCase() : trimmed;

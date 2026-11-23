@@ -7,9 +7,9 @@ export interface ViewHistoryState {
 }
 
 /**
- * Next.js menyimpan state router-nya sendiri di `window.history.state`.
- * State aplikasi kita disimpan di properti `ngeplay` dan selalu di-merge,
- * supaya history Next tidak rusak.
+ * Next.js keeps its own router state in `window.history.state`.
+ * Our app state lives in the `ngeplay` property and is always merged in,
+ * so Next's history is not corrupted.
  */
 export function readViewHistory(state: unknown): ViewHistoryState | null {
   if (!state || typeof state !== "object") return null;

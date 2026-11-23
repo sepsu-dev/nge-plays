@@ -234,7 +234,7 @@ export async function fetchTrackLyrics(
     return lyricsCache.get(cacheKey) ?? null;
   }
 
-  // Rate limit request yang benar-benar memanggil lrclib (cache hit tidak dihitung).
+  // Rate limit only counts requests that actually hit lrclib (cache hits are not counted).
   const ip = await getClientIp();
   if (ip && !takeRateLimit(`lyrics:${ip}`, 30)) return null;
 

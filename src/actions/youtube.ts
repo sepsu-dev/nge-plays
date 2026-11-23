@@ -188,8 +188,8 @@ async function getVisitorClient(clientHint?: string) {
     const forwarded = h.get("x-forwarded-for");
     const cfIp = h.get("cf-connecting-ip");
     const realIp = h.get("x-real-ip");
-    // Validasi IP sebelum dipakai: header bisa dipalsukan klien, dan nilai ini
-    // diteruskan ke YouTube / api.country.is.
+    // Validate the IP before using it: clients can forge these headers, and this value
+    // is forwarded to YouTube / api.country.is.
     clientIp = sanitizeIp(cfIp || realIp || (forwarded ? forwarded.split(",")[0].trim() : ""));
   } catch {}
 
@@ -213,9 +213,9 @@ async function ytmPost(
 ): Promise<any | null> {
   try {
     const { gl, hl, clientIp } = await getVisitorClient(clientHint);
-    // Rate limit per IP agar action tidak bisa dipakai sebagai proxy YouTube gratis.
-    // Tanpa IP (mis. localhost tanpa proxy) limit dilewati agar semua user tidak
-    // berbagi satu bucket "anon".
+    // Rate limit per IP so this action cannot be used as a free YouTube proxy.
+    // Without an IP (e.g. localhost with no proxy) the limit is skipped so every user
+    // does not share a single "anon" bucket.
     if (clientIp && !takeRateLimit(`ytm:${clientIp}`, 120)) return null;
     const reqHeaders: Record<string, string> = {
       ...YTM_HEADERS,

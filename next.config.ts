@@ -6,7 +6,7 @@ const securityHeaders = [
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
   { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
   { key: "Cross-Origin-Opener-Policy", value: "same-origin-allow-popups" },
-  // Hanya berlaku di HTTPS; aman dikirim di HTTP (browser mengabaikannya).
+  // Only applies over HTTPS; safe to send over HTTP (browsers ignore it).
   { key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains" },
 ];
 
@@ -16,7 +16,7 @@ const nextConfig: NextConfig = {
   poweredByHeader: false,
   experimental: {
     serverActions: {
-      // Batasi ukuran payload Server Action (default 1MB) untuk mengurangi DoS.
+      // Cap the Server Action payload size (default 1MB) to reduce DoS risk.
       bodySizeLimit: "256kb",
     },
   },

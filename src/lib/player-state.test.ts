@@ -107,7 +107,7 @@ assert.equal(shouldAcceptPlayerEvent("vid_A", "vid_B", null, 1, false), false);
 assert.equal(shouldAcceptPlayerEvent("vid_B", "vid_B", null, 1, false), true);
 
 // 7. Room state sync & baseVersion conflict guard
-// ID panjang (>=6) karena payload room di-whitelist oleh normalizeTrack.
+// Long ID (>=6) because the room payload is whitelisted by normalizeTrack.
 const ra = makeTrack("vid_AAAA");
 const rb = makeTrack("vid_BBBB");
 const rc = makeTrack("vid_CCCC");
@@ -246,20 +246,20 @@ assert.equal(shouldRestorePlayerAudio(false, 0, false, 80), true);
 assert.equal(shouldRestorePlayerAudio(false, 80, false, 80), false);
 assert.equal(shouldRestorePlayerAudio(true, 0, true, 80), false);
 
-// Playlist id berupa UUID v4 -> URL tidak berubah saat nama playlist di-rename.
+// Playlist id is a UUID v4 -> the URL does not change when the playlist is renamed.
 const uuidV4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 assert.match(createPlaylistId(), uuidV4, "playlist id is a UUID v4");
 const playlistIds = new Set(Array.from({ length: 1000 }, () => createPlaylistId()));
 assert.equal(playlistIds.size, 1000, "playlist ids are unique");
 
-// 11. Validasi id playlist: hanya UUID yang boleh masuk URL.
+// 11. Playlist id validation: only UUIDs may enter the URL.
 assert.equal(isPlaylistId(createPlaylistId()), true);
 assert.equal(isPlaylistId("  9F1C2A3E-1B2C-4D5E-8F90-123456789ABC  ".trim()), true);
 assert.equal(isPlaylistId("pl_1730000000"), false);
 assert.equal(isPlaylistId("my-playlist"), false);
 assert.equal(isPlaylistId(""), false);
 
-// 12. Migrasi playlist lama: id non-UUID diganti, id lama dipetakan ke UUID baru.
+// 12. Legacy playlist migration: non-UUID ids are replaced, old ids map to the new UUID.
 const legacyPlaylists = [
   { id: "pl_1730000000", name: "Chill", tracks: [] },
   { id: "9f1c2a3e-1b2c-4d5e-8f90-123456789abc", name: "Focus", tracks: [] },
@@ -268,32 +268,32 @@ const legacyPlaylists = [
 const migrated = migratePlaylistIds(legacyPlaylists);
 assert.equal(migrated.playlists.length, 3);
 assert.equal(isPlaylistId(migrated.playlists[0].id), true);
-assert.equal(migrated.playlists[1].id, legacyPlaylists[1].id, "UUID lama dipertahankan");
+assert.equal(migrated.playlists[1].id, legacyPlaylists[1].id, "existing UUID preserved");
 assert.equal(isPlaylistId(migrated.playlists[2].id), true);
 assert.equal(migrated.aliases["pl_1730000000"], migrated.playlists[0].id);
 assert.equal(migrated.aliases["pl_1730000001"], migrated.playlists[2].id);
-assert.equal(migrated.playlists[0].name, "Chill", "nama playlist tidak berubah");
+assert.equal(migrated.playlists[0].name, "Chill", "playlist name unchanged");
 
-// Idempoten: playlist yang sudah UUID tidak dimigrasi ulang.
+// Idempotent: playlists that are already UUIDs are not migrated again.
 const again = migratePlaylistIds(migrated.playlists);
-assert.equal(again.playlists, migrated.playlists, "tidak ada perubahan kedua");
+assert.equal(again.playlists, migrated.playlists, "no change on second run");
 assert.deepEqual(again.aliases, {});
 
-// Kolisi id: dua playlist dengan id sama tetap mendapat id unik.
+// Id collision: two playlists with the same id still get unique ids.
 const dup = migratePlaylistIds([
   { id: "pl_1", name: "A", tracks: [] },
   { id: "pl_1", name: "B", tracks: [] },
 ]);
 assert.notEqual(dup.playlists[0].id, dup.playlists[1].id);
 
-// 13. Id playlist: hanya UUID yang dinormalisasi ke huruf kecil.
+// 13. Playlist id: only UUIDs are normalized to lowercase.
 assert.equal(
   normalizePlaylistId(" 9F1C2A3E-1B2C-4D5E-8F90-123456789ABC "),
   "9f1c2a3e-1b2c-4d5e-8f90-123456789abc"
 );
-assert.equal(normalizePlaylistId("PL_1730000000"), "PL_1730000000", "id lama tidak diubah");
+assert.equal(normalizePlaylistId("PL_1730000000"), "PL_1730000000", "legacy id unchanged");
 
-// 14. Hanya `/` dan `/room` yang jadi route; link share room memakai /room.
+// 14. Only `/` and `/room` are routes; the room share link uses /room.
 assert.equal(ROUTES.home, "/");
 assert.equal(ROUTES.room, "/room");
 assert.equal(roomLink("ABC123"), "/room?room=ABC123");
@@ -302,7 +302,7 @@ assert.equal(
   "https://ngeplays.app/room?room=A%20B"
 );
 
-// 15. Query pencarian disimpan di `?search=` supaya refresh tidak mereset hasil.
+// 15. The search query is stored in `?search=` so a refresh does not reset the results.
 assert.equal(readSearchParam("?search=hello%20world"), "hello world");
 assert.equal(readSearchParam("?search=%20%20x%20%20"), "x");
 assert.equal(readSearchParam("?room=ABC"), "");
@@ -311,7 +311,7 @@ assert.equal(searchPath("/", "", "a b"), "/?search=a+b");
 assert.equal(searchPath("/", "?search=old&room=ABC", null), "/?room=ABC");
 assert.equal(searchPath("/room", "?room=ABC", "x"), "/room?room=ABC&search=x");
 
-// 16. History state aplikasi di-merge dengan state Next tanpa menghapus key Next.
+// 16. App history state is merged with Next state without dropping Next keys.
 const mergedView = mergeViewHistory(
   { __NA: true, tree: "next-tree" },
   { tab: "search", search: "abc" }
@@ -334,12 +334,12 @@ assert.deepEqual(readViewHistory({ ngeplay: { tab: "albums", entityId: "MPREb_x"
 assert.equal(readViewHistory({ foo: 1 }), null);
 assert.equal(readViewHistory(null), null);
 
-// 16. Payload room di-whitelist: field asing dibuang, URL non-https ditolak,
-// karakter kontrol dibersihkan, dan panjang queue dibatasi.
-assert.equal(sanitizeMemberName("  Ali\u0000ce\u200b  "), "Alice", "nama dibersihkan");
-assert.equal(sanitizeMemberName("x".repeat(50)).length, 24, "nama dibatasi 24 char");
+// 16. Room payload is whitelisted: unknown fields dropped, non-https URLs rejected,
+// control characters sanitized, and the queue length capped.
+assert.equal(sanitizeMemberName("  Ali\u0000ce\u200b  "), "Alice", "name sanitized");
+assert.equal(sanitizeMemberName("x".repeat(50)).length, 24, "name capped at 24 chars");
 
-assert.equal(normalizeTrack({ id: "bad id!" }), null, "id video invalid ditolak");
+assert.equal(normalizeTrack({ id: "bad id!" }), null, "invalid video id rejected");
 assert.equal(normalizeTrack("not-an-object"), null);
 assert.equal(normalizeTrack(null), null);
 
@@ -353,9 +353,9 @@ const cleaned = normalizeTrack({
 });
 assert.ok(cleaned);
 assert.equal(cleaned!.title, "Hello World");
-assert.equal(cleaned!.thumbnail, "", "thumbnail non-https dibuang");
+assert.equal(cleaned!.thumbnail, "", "non-https thumbnail dropped");
 assert.equal(cleaned!.duration, "3:21");
-assert.equal("evil" in cleaned!, false, "field asing dibuang");
+assert.equal("evil" in cleaned!, false, "unknown fields dropped");
 assert.equal(
   normalizeTrack({ id: "dQw4w9WgXcQ", thumbnail: "https://i.ytimg.com/vi/x/mqdefault.jpg" })!.thumbnail,
   "https://i.ytimg.com/vi/x/mqdefault.jpg"
@@ -366,12 +366,12 @@ const queueInput = [
   { id: "bad id!" },
   { id: "abcdefghijk", title: "B" },
 ];
-assert.equal(sanitizeQueue(queueInput).length, 2, "track invalid dibuang");
+assert.equal(sanitizeQueue(queueInput).length, 2, "invalid track dropped");
 assert.equal(
   sanitizeQueue(queueInput, 1).length,
   1,
-  "queue dibatasi sesuai max"
+  "queue capped to max"
 );
-assert.deepEqual(sanitizeQueue("nope"), [], "non-array jadi queue kosong");
+assert.deepEqual(sanitizeQueue("nope"), [], "non-array becomes an empty queue");
 
 console.log("ALL_PLAYER_STATE_CHECKS_PASSED");

@@ -32,15 +32,15 @@ interface RoomRecord {
   state: RoomState;
   subscribers: Map<string, RoomSubscriber>;
   hasJoined: boolean;
-  /** Kapan member terakhir pergi; room baru dihapus setelah grace period. */
+  /** When the last member left; the room is only removed after the grace period. */
   emptySince?: number;
-  /** clientId -> token rahasia per member; mencegah spoofing identitas. */
+  /** clientId -> secret token per member; prevents identity spoofing. */
   tokens: Map<string, string>;
 }
 
 const ROOM_PENDING_TTL_MS = 60_000;
 const ROOM_IDLE_TTL_MS = 6 * 3600_000;
-/** Grace period setelah member terakhir putus, supaya reconnect tidak kehilangan room. */
+/** Grace period after the last member disconnects, so a reconnect does not lose the room. */
 const ROOM_EMPTY_TTL_MS = 5 * 60_000;
 const MAX_USED_CODES = 50_000;
 const MAX_ACTIVE_ROOMS = 1_000;
@@ -79,12 +79,12 @@ function rememberUsedCode(code: string) {
 function pruneRooms(now = Date.now()) {
   for (const [code, rec] of rooms) {
     const unjoinedExpired = !rec.hasJoined && now - rec.state.createdAt > ROOM_PENDING_TTL_MS;
-    // Room hanya dihapus kalau member kosong; playback/idle tidak jadi alasan.
+    // The room is only removed when it has no members; playback/idle is not a reason.
     const idleExpired =
       rec.subscribers.size === 0 && now - rec.state.lastActivityAt > ROOM_IDLE_TTL_MS;
     const emptyExpired = rec.emptySince !== undefined && now - rec.emptySince > ROOM_EMPTY_TTL_MS;
     if (unjoinedExpired || idleExpired || emptyExpired) {
-      // Tutup SSE yang masih menempel supaya tidak jadi kebocoran koneksi/memori.
+      // Close any leftover SSE so it does not leak connections/memory.
       for (const sub of [...rec.subscribers.values()]) sub.close();
       rooms.delete(code);
     }
@@ -107,7 +107,7 @@ function broadcastRoom(rec: RoomRecord, now = Date.now(), excludeSubId?: string)
   }
 }
 
-/** IP hanya dipakai untuk rate limit — bukan identitas/auth. */
+/** The IP is only used for rate limiting — not for identity/auth. */
 function requestIp(req: NextRequest): string {
   const raw =
     req.headers.get("cf-connecting-ip") ||
@@ -156,7 +156,7 @@ function tokenMatches(rec: RoomRecord, clientId: string, token: unknown): boolea
 }
 
 function issueToken(rec: RoomRecord, clientId: string): string {
-  // Batasi jumlah token per room supaya tidak tumbuh tanpa batas.
+  // Cap the number of tokens per room so it does not grow without bound.
   if (!rec.tokens.has(clientId) && rec.tokens.size >= MAX_TOKENS_PER_ROOM) {
     const oldest = rec.tokens.keys().next().value;
     if (oldest) rec.tokens.delete(oldest);
@@ -253,8 +253,8 @@ export async function GET(req: NextRequest) {
     }
     const members = buildMembers(rec);
     if (members.length === 0) {
-      // Jangan hapus langsung: SSE bisa putus sesaat (sleep/network) dan
-      // EventSource akan reconnect. Hapus baru setelah grace period.
+      // Do not delete immediately: SSE can drop briefly (sleep/network) and
+      // EventSource will reconnect. Delete only after the grace period.
       rec.emptySince = Date.now();
       rec.state = { ...rec.state, members, memberCount: 0 };
       return;
@@ -283,7 +283,7 @@ export async function GET(req: NextRequest) {
         } catch {}
       };
 
-      // Satu clientId = satu subscriber; tutup koneksi lama supaya tidak menumpuk.
+      // One clientId = one subscriber; close the old connection so they do not pile up.
       for (const oldSub of [...rec.subscribers.values()]) {
         if (oldSub.clientId === clientId) oldSub.close();
       }
@@ -412,7 +412,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ room: rec.state, serverNow: now, token: memberToken });
   }
 
-  // Semua aksi setelah join wajib menyertakan token milik clientId tersebut.
+  // Every action after join must include the token belonging to that clientId.
   if (!tokenMatches(rec, clientId, body?.token)) {
     return NextResponse.json({ error: "Invalid room token" }, { status: 403 });
   }
@@ -460,7 +460,7 @@ export async function POST(req: NextRequest) {
     if (members.length > 0) {
       broadcastRoom(rec, now);
     } else {
-      // Jangan hapus langsung: member lain bisa reconnect. Prune setelah grace period.
+      // Do not delete immediately: other members may reconnect. Prune after the grace period.
       rec.emptySince = now;
     }
     return NextResponse.json({ ok: true });

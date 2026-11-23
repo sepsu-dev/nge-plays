@@ -15,11 +15,11 @@ export function AppSidebar({ tab, likedCount, onSelectTab }: AppSidebarProps) {
     { id: "songs", label: "Songs", icon: Headphones },
     { id: "albums", label: "Albums", icon: Disc3 },
     { id: "artists", label: "Artists", icon: Users },
-    // Liked, History, dan playlist digabung di satu menu Library
+    // Liked, History, and playlists are grouped under the single Library menu
     { id: "library", label: "Library", icon: ListMusic, badge: likedCount || undefined },
   ];
 
-  // Library menaungi liked/history/playlist, jadi detail playlist tetap menyalakan menu Library.
+  // Library covers liked/history/playlists, so playlist detail still highlights the Library menu.
   const isItemActive = (id: TabId) =>
     id === "library"
       ? tab === "library" || tab === "liked" || tab === "history" || tab === "playlist"
