@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import type { Track } from "@/actions/ytm-core";
 import type { ClockStore } from "@/lib/playback-clock";
@@ -18,6 +18,17 @@ declare global {
     onYouTubeIframeAPIReady: () => void;
   }
 }
+
+// Privacy Enhanced Mode host. It keeps YouTube from writing marketing cookies on our
+// origin, and it is the host the app prefers by default.
+const EMBED_HOST_NOCOOKIE = "https://www.youtube-nocookie.com";
+// A minority of videos refuse the no-cookie embed. When that happens the player is
+// rebuilt on the standard host and resumes at the same position.
+const EMBED_HOST_STANDARD = "https://www.youtube.com";
+
+// YT.Player error codes that mean "this video is not playable in THIS embed":
+// 100 = video not found/removed, 101 and 150 = embedding disabled by the owner.
+const EMBED_BLOCKED_ERROR_CODES = new Set([100, 101, 150]);
 
 interface UseYoutubePlayerParams {
   currentTrack: Track | undefined;
@@ -68,6 +79,9 @@ export function useYoutubePlayer({
   onSaveSession,
 }: UseYoutubePlayerParams) {
   const playerRef = useRef<any>(null);
+  const [embedHost, setEmbedHost] = useState(EMBED_HOST_NOCOOKIE);
+  const embedHostRef = useRef(embedHost);
+  embedHostRef.current = embedHost;
   const initVideoIdRef = useRef<string>("");
   const initStartSecRef = useRef(0);
   const readyRef = useRef(false);
@@ -294,7 +308,7 @@ export function useYoutubePlayer({
         height: "100%",
         width: "100%",
         videoId: trackId,
-        host: "https://www.youtube.com",
+        host: embedHostRef.current,
         playerVars: {
           autoplay: resume?.autoPlay ? 1 : 0,
           start: startSec,
@@ -486,12 +500,41 @@ export function useYoutubePlayer({
               }
             }
           },
-          onError: () => {
+          onError: (e: any) => {
             clearBgTimers();
             wantAutoPlayRef.current = false;
             loadingTargetIdRef.current = null;
             seenTransitionRef.current = false;
             callbacksRef.current.setIsPlaying(false);
+
+            // Some videos are not playable from the no-cookie host. Rebuild the player on
+            // the standard host once, resuming where the failed attempt stopped, instead of
+            // dropping the track on the user.
+            const errorCode = Number(e?.data);
+            if (
+              embedHostRef.current === EMBED_HOST_NOCOOKIE &&
+              EMBED_BLOCKED_ERROR_CODES.has(errorCode)
+            ) {
+              const videoId = activeTrackIdRef.current || getPlayerVideoId(playerRef.current);
+              const resumeAt = Math.max(
+                0,
+                playerRef.current?.getCurrentTime?.() || clock.getSnapshot().currentTime || 0
+              );
+              const wasPlaying = optsRef.current.isPlaying;
+              // YT.Player is bound to the iframe it created, so destroy it before the
+              // effect re-runs with the new host and builds a fresh player.
+              try {
+                playerRef.current?.destroy?.();
+              } catch {}
+              playerRef.current = null;
+              readyRef.current = false;
+              if (videoId) {
+                pendingResumeRef.current = { videoId, seekTo: resumeAt, autoPlay: wasPlaying };
+              }
+              setEmbedHost(EMBED_HOST_STANDARD);
+              return;
+            }
+
             toast.error("Track cannot be played in embedded player");
           },
         },
@@ -514,6 +557,7 @@ export function useYoutubePlayer({
     clearBgTimers,
     clock,
     currentIndexRef,
+    embedHost,
     pendingResumeRef,
     queueRef,
     syncPlayerAudio,
