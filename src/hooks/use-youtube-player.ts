@@ -23,12 +23,15 @@ declare global {
 // origin, and it is the host the app prefers by default.
 const EMBED_HOST_NOCOOKIE = "https://www.youtube-nocookie.com";
 // A minority of videos refuse the no-cookie embed. When that happens the player is
-// rebuilt on the standard host and resumes at the same position.
+// rebuilt once per session on the standard host and resumes at the same position.
 const EMBED_HOST_STANDARD = "https://www.youtube.com";
 
 // YT.Player error codes that mean "this video is not playable in THIS embed":
 // 100 = video not found/removed, 101 and 150 = embedding disabled by the owner.
-const EMBED_BLOCKED_ERROR_CODES = new Set([100, 101, 150]);
+// Only 101/150 depend on the embed host, so they are the only codes worth rebuilding
+// the player for. A removed/private video (100) fails the same way on every host, and
+// rebuilding the iframe for it only produces extra widget-api handshake noise.
+const EMBED_HOST_FALLBACK_ERROR_CODES = new Set([101, 150]);
 
 interface UseYoutubePlayerParams {
   currentTrack: Track | undefined;
@@ -96,6 +99,9 @@ export function useYoutubePlayer({
   const bgProbeTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const cuedRetryIdRef = useRef("");
   const cuedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // One host fallback per session: every rebuild creates a new iframe, which re-runs the
+  // widget-api handshake (and its harmless cross-origin postMessage warning). Never loop.
+  const hostFallbackUsedRef = useRef(false);
 
   const optsRef = useRef({ isPlaying, volume, muted, repeat, shuffle });
   optsRef.current = { isPlaying, volume, muted, repeat, shuffle };
@@ -508,13 +514,18 @@ export function useYoutubePlayer({
             callbacksRef.current.setIsPlaying(false);
 
             // Some videos are not playable from the no-cookie host. Rebuild the player on
-            // the standard host once, resuming where the failed attempt stopped, instead of
-            // dropping the track on the user.
+            // the standard host ONCE per session, resuming where the failed attempt stopped,
+            // instead of dropping the track on the user. Rebuilding more than once would
+            // destroy/recreate the iframe on every blocked track, which re-triggers the
+            // widget-api handshake for nothing (the player already lives on the standard
+            // host after the first fallback, so later tracks just use it).
             const errorCode = Number(e?.data);
             if (
               embedHostRef.current === EMBED_HOST_NOCOOKIE &&
-              EMBED_BLOCKED_ERROR_CODES.has(errorCode)
+              !hostFallbackUsedRef.current &&
+              EMBED_HOST_FALLBACK_ERROR_CODES.has(errorCode)
             ) {
+              hostFallbackUsedRef.current = true;
               const videoId = activeTrackIdRef.current || getPlayerVideoId(playerRef.current);
               const resumeAt = Math.max(
                 0,
